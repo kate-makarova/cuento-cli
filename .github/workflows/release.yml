@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    name: Build and upload binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/v1/go.mod
+
+      - name: Build macOS binary
+        working-directory: src/v1
+        run: GOOS=darwin GOARCH=amd64 go build -o ../../dist/cuento-cli-mac .
+
+      - name: Build Windows binary
+        working-directory: src/v1
+        run: GOOS=windows GOARCH=amd64 go build -o ../../dist/cuento-cli.exe .
+
+      - name: Upload macOS binary
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/cuento-cli-mac
+
+      - name: Upload Windows binary
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/cuento-cli.exe
