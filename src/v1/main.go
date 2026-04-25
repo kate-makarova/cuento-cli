@@ -765,13 +765,24 @@ type step struct {
 // runSteps executes steps sequentially. startFrom (1-indexed) skips earlier steps
 // unless they are marked always. onStepDone is called with the 1-indexed step number
 // after each step completes (use nil when progress tracking is not needed).
+// fatalExit prints an error and exits. On Windows it pauses so the user can
+// read the message before the console window closes.
+func fatalExit(msg string) {
+	fmt.Println(msg)
+	if runtime.GOOS == "windows" {
+		fmt.Println("\nPress Enter to exit...")
+		_, _ = reader.ReadString('\n')
+	}
+	os.Exit(1)
+}
+
 func runSteps(steps []step, startFrom int, onStepDone func(int)) {
 	passed, skipped := 0, 0
 	for i, s := range steps {
 		stepNum := i + 1
 		skip := stepNum < startFrom && !s.always
 		if skip {
-			fmt.Printf("\n%s▶  %s%s %s\n", colorBold+colorBlue, s.name, colorReset, cyan("(already done)"))
+			fmt.Printf("\n▶  %s %s\n", s.name, cyan("(already done)"))
 			skipped++
 			continue
 		}
@@ -779,13 +790,11 @@ func runSteps(steps []step, startFrom int, onStepDone func(int)) {
 		if stepNum < startFrom && s.always {
 			label += " (prerequisite)"
 		}
-		fmt.Printf("\n%s▶  %s%s\n", colorBold+colorBlue, label, colorReset)
+		fmt.Printf("\n▶  %s\n", bold(label))
 		if err := s.fn(); err != nil {
-			fmt.Printf("%s   ✗ %v%s\n", colorRed, err, colorReset)
-			fmt.Println(red("\nStopped."))
-			os.Exit(1)
+			fatalExit(red("   ✗ "+err.Error()) + red("\nStopped."))
 		}
-		fmt.Printf("%s   ✓ Done%s\n", colorGreen, colorReset)
+		fmt.Println(green("   ✓ Done"))
 		passed++
 		if onStepDone != nil && stepNum >= startFrom {
 			onStepDone(stepNum)
@@ -930,8 +939,7 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 		var err error
 		cfg.SSHPrivateKey, cfg.SSHPublicKey, err = generateSSHKeyPair()
 		if err != nil {
-			fmt.Println(red("failed: " + err.Error()))
-			os.Exit(1)
+			fatalExit(red("failed: " + err.Error()))
 		}
 		fmt.Println(green("done"))
 		fmt.Println()
@@ -1214,8 +1222,7 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 
 func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 	if saved == nil {
-		fmt.Println(red("  ✗ No saved config for project " + projectName))
-		os.Exit(1)
+		fatalExit(red("  ✗ No saved config for project " + projectName))
 	}
 
 	cfg := &Config{}
@@ -1239,8 +1246,7 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 
 	user, err := localOutput("gh", "api", "user", "--jq", ".login")
 	if err != nil || user == "" {
-		fmt.Println(red("  ✗ Could not resolve GitHub user: " + err.Error()))
-		os.Exit(1)
+		fatalExit(red("  ✗ Could not resolve GitHub user: " + err.Error()))
 	}
 	cfg.GitHubUser = user
 	cfg.BackendFork = cfg.GitHubUser + "/" + projectName + "-backend"
@@ -1439,8 +1445,7 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 
 func runAddUser(app *AppConfig, projectName string, saved *ProjectConfig) {
 	if saved == nil {
-		fmt.Println(red("  ✗ No saved config for project " + projectName))
-		os.Exit(1)
+		fatalExit(red("  ✗ No saved config for project " + projectName))
 	}
 
 	cfg := &Config{}
@@ -1465,8 +1470,7 @@ func runAddUser(app *AppConfig, projectName string, saved *ProjectConfig) {
 	sha256Hex := hex.EncodeToString(sha256Hash[:])
 	hashed, err := bcrypt.GenerateFromPassword([]byte(sha256Hex), 14)
 	if err != nil {
-		fmt.Println(red("  ✗ Failed to hash password: " + err.Error()))
-		os.Exit(1)
+		fatalExit(red("  ✗ Failed to hash password: " + err.Error()))
 	}
 
 	var remote *Remote
@@ -1518,8 +1522,7 @@ const permissionsFile = "src/Install/permissions.csv"
 
 func runImportPermissions(app *AppConfig, projectName string, saved *ProjectConfig) {
 	if saved == nil {
-		fmt.Println(red("  ✗ No saved config for project " + projectName))
-		os.Exit(1)
+		fatalExit(red("  ✗ No saved config for project " + projectName))
 	}
 
 	cfg := &Config{}
@@ -1596,8 +1599,7 @@ func runImportPermissions(app *AppConfig, projectName string, saved *ProjectConf
 
 func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) {
 	if saved == nil {
-		fmt.Println(red("  ✗ No saved config for project " + projectName))
-		os.Exit(1)
+		fatalExit(red("  ✗ No saved config for project " + projectName))
 	}
 
 	cfg := &Config{}
