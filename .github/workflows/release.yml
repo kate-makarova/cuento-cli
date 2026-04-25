@@ -8,9 +8,9 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build and upload binaries
-    runs-on: ubuntu-latest
+  build-macos:
+    name: Build and upload macOS binary
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -21,16 +21,32 @@ jobs:
 
       - name: Build macOS binary
         working-directory: src/v1
-        run: GOOS=darwin GOARCH=amd64 go build -o ../../dist/cuento-cli-mac .
+        run: GOARCH=amd64 go build -o ../../dist/cuento-cli-mac .
 
-      - name: Build Windows binary
-        working-directory: src/v1
-        run: GOOS=windows GOARCH=amd64 go build -o ../../dist/cuento-cli.exe .
+      - name: Ad-hoc sign binary
+        run: |
+          chmod +x ./dist/cuento-cli-mac
+          codesign --force -s - ./dist/cuento-cli-mac
 
       - name: Upload macOS binary
         uses: softprops/action-gh-release@v2
         with:
           files: dist/cuento-cli-mac
+
+  build-windows:
+    name: Build and upload Windows binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/v1/go.mod
+
+      - name: Build Windows binary
+        working-directory: src/v1
+        run: GOOS=windows GOARCH=amd64 go build -o ../../dist/cuento-cli.exe .
 
       - name: Upload Windows binary
         uses: softprops/action-gh-release@v2
