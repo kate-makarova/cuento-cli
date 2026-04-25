@@ -660,6 +660,15 @@ jobs:
           source: "cuento-backend"
           target: "/var/www/backend"
 
+      - name: Copy locales to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "locales"
+          target: "/var/www/backend"
+
       - name: Restart service
         uses: appleboy/ssh-action@v1.0.3
         with:
