@@ -40,11 +40,16 @@ const (
 	colorBold   = "\033[1m"
 )
 
-func bold(s string) string   { return colorBold + s + colorReset }
-func green(s string) string  { return colorGreen + s + colorReset }
-func red(s string) string    { return colorRed + s + colorReset }
-func yellow(s string) string { return colorYellow + s + colorReset }
-func cyan(s string) string   { return colorCyan + s + colorReset }
+// colorsEnabled is set at startup based on whether the terminal supports ANSI.
+// Windows CMD and PowerShell on versions before Windows 10 do not support ANSI
+// escape codes and will render them as raw text.
+var colorsEnabled = runtime.GOOS != "windows"
+
+func bold(s string) string   { if colorsEnabled { return colorBold + s + colorReset }; return s }
+func green(s string) string  { if colorsEnabled { return colorGreen + s + colorReset }; return s }
+func red(s string) string    { if colorsEnabled { return colorRed + s + colorReset }; return s }
+func yellow(s string) string { if colorsEnabled { return colorYellow + s + colorReset }; return s }
+func cyan(s string) string   { if colorsEnabled { return colorCyan + s + colorReset }; return s }
 
 // ─── Upstream repos ───────────────────────────────────────────────────────────
 
@@ -223,14 +228,18 @@ func promptRequired(q string) string {
 }
 
 func promptPassword(q string) string {
-	fmt.Print(cyan("? ") + q + ": ")
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	// term.ReadPassword uses raw console mode which is unreliable on old Windows
+	// (8.1 and earlier). Fall back to plain input on Windows; the token is not
+	// echoed on Unix-like systems but will be visible on legacy Windows consoles.
+	if runtime.GOOS != "windows" && term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Print(cyan("? ") + q + ": ")
 		b, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Println()
 		if err == nil {
 			return string(b)
 		}
 	}
+	fmt.Print(cyan("? ") + q + " (input visible): ")
 	line, _ := reader.ReadString('\n')
 	return strings.TrimSpace(line)
 }
@@ -240,8 +249,8 @@ func promptPasswordDefault(q, saved string) string {
 	if saved != "" {
 		hint = " [saved, Enter to keep]"
 	}
-	fmt.Print(cyan("? ") + q + hint + ": ")
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	if runtime.GOOS != "windows" && term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Print(cyan("? ") + q + hint + ": ")
 		b, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Println()
 		if err == nil {
@@ -251,6 +260,7 @@ func promptPasswordDefault(q, saved string) string {
 			return string(b)
 		}
 	}
+	fmt.Print(cyan("? ") + q + hint + " (input visible): ")
 	line, _ := reader.ReadString('\n')
 	val := strings.TrimSpace(line)
 	if val == "" {
