@@ -45,11 +45,36 @@ const (
 // escape codes and will render them as raw text.
 var colorsEnabled = runtime.GOOS != "windows"
 
-func bold(s string) string   { if colorsEnabled { return colorBold + s + colorReset }; return s }
-func green(s string) string  { if colorsEnabled { return colorGreen + s + colorReset }; return s }
-func red(s string) string    { if colorsEnabled { return colorRed + s + colorReset }; return s }
-func yellow(s string) string { if colorsEnabled { return colorYellow + s + colorReset }; return s }
-func cyan(s string) string   { if colorsEnabled { return colorCyan + s + colorReset }; return s }
+func bold(s string) string {
+	if colorsEnabled {
+		return colorBold + s + colorReset
+	}
+	return s
+}
+func green(s string) string {
+	if colorsEnabled {
+		return colorGreen + s + colorReset
+	}
+	return s
+}
+func red(s string) string {
+	if colorsEnabled {
+		return colorRed + s + colorReset
+	}
+	return s
+}
+func yellow(s string) string {
+	if colorsEnabled {
+		return colorYellow + s + colorReset
+	}
+	return s
+}
+func cyan(s string) string {
+	if colorsEnabled {
+		return colorCyan + s + colorReset
+	}
+	return s
+}
 
 // ─── Upstream repos ───────────────────────────────────────────────────────────
 
@@ -1134,7 +1159,8 @@ chmod -R 755 /var/www`)
 			},
 		},
 		{name: "Create system user", fn: func() error {
-			return remote.run(`id cuento &>/dev/null || useradd -r -s /bin/false cuento`)
+			return remote.run(`id cuento &>/dev/null || useradd -r -s /bin/false cuento
+usermod -aG www-data cuento`)
 		}},
 		{
 			name: "Install backend systemd service",
