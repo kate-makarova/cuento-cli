@@ -626,11 +626,14 @@ func generateMigration(oldSQL, newSQL string) string {
 			}
 			continue
 		}
-		// Table exists — find new columns
+		// Table exists — find new or changed columns
 		for colName, colDef := range newCols {
-			if _, known := oldCols[colName]; !known {
+			if oldDef, known := oldCols[colName]; !known {
 				stmts = append(stmts,
 					fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN %s;\n", tableName, colDef))
+			} else if strings.TrimSpace(oldDef) != strings.TrimSpace(colDef) {
+				stmts = append(stmts,
+					fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN %s;\n", tableName, colDef))
 			}
 		}
 	}
