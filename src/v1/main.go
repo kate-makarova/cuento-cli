@@ -1831,10 +1831,10 @@ func (r riskLevel) colored() string {
 }
 
 var (
-	reNormWS            = regexp.MustCompile(`\s+`)
+	reNormWS = regexp.MustCompile(`\s+`)
 	// MariaDB puts NOT NULL before DEFAULT; canonicalise to NOT NULL before DEFAULT.
 	reDefaultBeforeNull = regexp.MustCompile(`(?i)\bdefault\s+(\S+)\s+not\s+null\b`)
-	reCharsetSQL = regexp.MustCompile(`(?i)\s+(character\s+set|charset|collate)\s+\S+`)
+	reCharsetSQL        = regexp.MustCompile(`(?i)\s+(character\s+set|charset|collate)\s+\S+`)
 	// MariaDB 10.5+ drops display widths for integer types (int(11) → int).
 	reIntWidth = regexp.MustCompile(`\b(tinyint|smallint|mediumint|int|integer|bigint|year)\(\d+\)`)
 	// mysqldump moves inline PRIMARY KEY / UNIQUE [KEY] to separate constraint lines.
@@ -2297,7 +2297,7 @@ on:
 
 jobs:
   install-sonic:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
