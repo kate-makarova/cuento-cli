@@ -397,7 +397,6 @@ func ghReadFile(repo, path, ref string) (string, error) {
 	}
 	var stderr bytes.Buffer
 	cmd := exec.Command("gh", "api", endpoint, "--jq", ".content")
-	cmd.Env = append(os.Environ(), "GH_TOKEN="+os.Getenv("GH_TOKEN"))
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
@@ -1363,7 +1362,11 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 	cfg.DBPass = saved.DBPass
 
 	if cfg.GitHubToken != "" {
-		os.Setenv("GH_TOKEN", cfg.GitHubToken)
+		cmd := exec.Command("gh", "auth", "login", "--with-token")
+		cmd.Stdin = strings.NewReader(cfg.GitHubToken + "\n")
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		_ = cmd.Run()
 	}
 
 	user, err := localOutput("gh", "api", "user", "--jq", ".login")
@@ -2088,7 +2091,11 @@ func runDiagnostics(app *AppConfig, projectName string, saved *ProjectConfig) {
 	cfg.DBPass = saved.DBPass
 
 	if cfg.GitHubToken != "" {
-		os.Setenv("GH_TOKEN", cfg.GitHubToken)
+		cmd := exec.Command("gh", "auth", "login", "--with-token")
+		cmd.Stdin = strings.NewReader(cfg.GitHubToken + "\n")
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		_ = cmd.Run()
 	}
 
 	// ── Gather data ──────────────────────────────────────────────────────────
@@ -2413,7 +2420,7 @@ WantedBy=multi-user.target
 func printBanner() {
 	fmt.Println()
 	fmt.Println(bold(colorBlue + "╔══════════════════════════════════════╗" + colorReset))
-	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.3.2            ║" + colorReset))
+	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.3.3            ║" + colorReset))
 	fmt.Println(bold(colorBlue + "╚══════════════════════════════════════╝" + colorReset))
 	fmt.Println()
 }
