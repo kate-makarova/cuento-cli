@@ -1095,8 +1095,20 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 					"main", "Disable dev pipeline in fork", devWorkflowDisabled); err != nil {
 					return fmt.Errorf("backend dev pipeline: %w", err)
 				}
-				return ghUpdateFile(cfg.FrontendFork, ".github/workflows/deploy-dev.yml",
-					"main", "Disable dev pipeline in fork", devWorkflowDisabled)
+				if err := ghUpdateFile(cfg.FrontendFork, ".github/workflows/deploy-dev.yml",
+					"main", "Disable dev pipeline in fork", devWorkflowDisabled); err != nil {
+					return fmt.Errorf("frontend dev pipeline: %w", err)
+				}
+				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/sonic.yml",
+					"main", "Add Sonic install workflow", sonicWorkflow); err != nil {
+					return fmt.Errorf("sonic workflow: %w", err)
+				}
+				if err := ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.cfg",
+					"main", "Add Sonic config", sonicCfgFile); err != nil {
+					return fmt.Errorf("sonic config: %w", err)
+				}
+				return ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.service",
+					"main", "Add Sonic service file", sonicServiceFile)
 			},
 		},
 		{
@@ -1290,6 +1302,18 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 				fmt.Printf("   %s @ %s\n", upstreamFrontend, sha)
 				return ghUpdateFile(cfg.FrontendFork, deployedFrontendCommitFile, trackBranch,
 					"Record last deployed upstream commit", sha+"\n")
+			},
+		},
+		{
+			name: "Trigger Sonic install pipeline",
+			fn: func() error {
+				if err := runLocal("gh", "api",
+					fmt.Sprintf("repos/%s/actions/workflows/sonic.yml/dispatches", cfg.BackendFork),
+					"-X", "POST", "-f", "ref=main"); err != nil {
+					return err
+				}
+				fmt.Println(cyan("   The search engine is being installed in the background and will be ready in 10–15 minutes."))
+				return nil
 			},
 		},
 	}, resumeFrom, func(completedStep int) {
@@ -1742,6 +1766,21 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 				}
 				return ghUpdateFile(cfg.FrontendFork, ".github/workflows/deploy-dev.yml",
 					"main", "Disable dev pipeline in fork", devWorkflowDisabled)
+			},
+		},
+		{
+			name: "Update Sonic workflow",
+			fn: func() error {
+				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/sonic.yml",
+					"main", "Reset Sonic install workflow", sonicWorkflow); err != nil {
+					return fmt.Errorf("sonic workflow: %w", err)
+				}
+				if err := ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.cfg",
+					"main", "Reset Sonic config", sonicCfgFile); err != nil {
+					return fmt.Errorf("sonic config: %w", err)
+				}
+				return ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.service",
+					"main", "Reset Sonic service file", sonicServiceFile)
 			},
 		},
 	}, 0, nil)
@@ -2249,12 +2288,132 @@ func runDiagnostics(app *AppConfig, projectName string, saved *ProjectConfig) {
 	fmt.Println()
 }
 
+// ─── SONIC WORKFLOW ───────────────────────────────────────────────────────────
+
+const sonicWorkflow = `name: Install Sonic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install-sonic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust and build Sonic
+        run: |
+          sudo apt-get install -y build-essential git
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          source "$HOME/.cargo/env"
+          git clone --depth 1 https://github.com/valeriansaliou/sonic.git sonic-src
+          cd sonic-src
+          cargo build --release
+          mkdir -p ../deploy
+          cp target/release/sonic ../deploy/sonic
+          cp ../.github/sonic/sonic.cfg ../deploy/sonic.cfg
+          cp ../.github/sonic/sonic.service ../deploy/sonic.service
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy/*"
+          target: "/tmp/sonic-deploy/"
+          strip_components: 1
+
+      - name: Install and start Sonic
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cp /tmp/sonic-deploy/sonic /usr/local/bin/sonic
+            chmod 755 /usr/local/bin/sonic
+            cp /tmp/sonic-deploy/sonic.cfg /etc/sonic.cfg
+            cp /tmp/sonic-deploy/sonic.service /etc/systemd/system/sonic.service
+            id -u sonic &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin sonic
+            mkdir -p /var/lib/sonic/store/kv /var/lib/sonic/store/fst
+            chown -R sonic:sonic /var/lib/sonic
+            systemctl daemon-reload
+            systemctl enable sonic
+            systemctl restart sonic
+            rm -rf /tmp/sonic-deploy
+`
+
+const sonicCfgFile = `[server]
+log_level = "error"
+
+[channel]
+inet = "0.0.0.0:1491"
+tcp_timeout = 300
+auth_password = "SecretPassword"
+
+[channel.search]
+query_limit_default = 10
+query_limit_maximum = 100
+query_alternates_try = 4
+suggest_limit_default = 5
+suggest_limit_maximum = 20
+list_limit_default = 100
+list_limit_maximum = 500
+
+[store]
+
+[store.kv]
+path = "/var/lib/sonic/store/kv/"
+retain_word_objects = 1000
+
+[store.kv.pool]
+inactive_after = 1800
+
+[store.kv.database]
+flush_after = 900
+compress = true
+parallelism = 2
+max_files = 100
+max_compactions = 1
+max_flushes = 1
+write_buffer = 16384
+write_ahead_log = true
+
+[store.fst]
+path = "/var/lib/sonic/store/fst/"
+
+[store.fst.pool]
+inactive_after = 300
+
+[store.fst.graph]
+consolidate_after = 180
+max_size = 2048
+max_words = 250000
+`
+
+const sonicServiceFile = `[Unit]
+Description=Sonic Search Index
+After=network.target
+
+[Service]
+Type=simple
+User=sonic
+ExecStart=/usr/local/bin/sonic -c /etc/sonic.cfg
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`
+
 // ─── Banner & main ────────────────────────────────────────────────────────────
 
 func printBanner() {
 	fmt.Println()
 	fmt.Println(bold(colorBlue + "╔══════════════════════════════════════╗" + colorReset))
-	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.0.0            ║" + colorReset))
+	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.3.0            ║" + colorReset))
 	fmt.Println(bold(colorBlue + "╚══════════════════════════════════════╝" + colorReset))
 	fmt.Println()
 }
