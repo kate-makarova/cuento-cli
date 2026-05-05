@@ -2349,7 +2349,7 @@ const sonicCfgFile = `[server]
 log_level = "error"
 
 [channel]
-inet = "0.0.0.0:1491"
+inet = "127.0.0.1:1491"
 tcp_timeout = 300
 auth_password = "SecretPassword"
 
@@ -2413,7 +2413,7 @@ WantedBy=multi-user.target
 func printBanner() {
 	fmt.Println()
 	fmt.Println(bold(colorBlue + "╔══════════════════════════════════════╗" + colorReset))
-	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.3.0            ║" + colorReset))
+	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.3.2            ║" + colorReset))
 	fmt.Println(bold(colorBlue + "╚══════════════════════════════════════╝" + colorReset))
 	fmt.Println()
 }
