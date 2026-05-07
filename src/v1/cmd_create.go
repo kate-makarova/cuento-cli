@@ -206,7 +206,13 @@ chmod -R 755 /var/www`)
 		{
 			name: "Configure Caddy",
 			fn: func() error {
-				caddyfile := fmt.Sprintf(`%s {
+				caddyfile := fmt.Sprintf(`{
+    servers {
+        metrics
+    }
+}
+
+%s {
     handle /ws {
         reverse_proxy 127.0.0.1:8080 {
             flush_interval -1
