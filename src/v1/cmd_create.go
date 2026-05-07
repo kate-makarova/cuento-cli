@@ -200,7 +200,8 @@ apt update && apt install -y caddy`)
 		{name: "Create app directories", fn: func() error {
 			return remote.run(`
 mkdir -p /var/www/frontend /var/www/backend
-chown -R www-data:www-data /var/www/frontend /var/www/backend
+chown -R www-data:www-data /var/www/frontend
+chown -R cuento:cuento /var/www/backend
 chmod -R 755 /var/www`)
 		}},
 		{
