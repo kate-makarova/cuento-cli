@@ -137,7 +137,7 @@ func generateMigration(oldSQL, newSQL string) string {
 			if oldDef, known := oldCols[colName]; !known {
 				stmts = append(stmts,
 					fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN %s;\n", tableName, colDef))
-			} else if strings.TrimSpace(oldDef) != strings.TrimSpace(colDef) {
+			} else if normalizeColDef(oldDef) != normalizeColDef(colDef) {
 				stmts = append(stmts,
 					fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN %s;\n", tableName, colDef))
 			}
