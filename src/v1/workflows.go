@@ -322,6 +322,7 @@ ExecStart=/usr/local/bin/qdrant
 Restart=on-failure
 RestartSec=5
 Environment=QDRANT__STORAGE__STORAGE_PATH=/var/lib/qdrant/storage
+Environment=QDRANT__STORAGE__ON_DISK_PAYLOAD=true
 
 [Install]
 WantedBy=multi-user.target

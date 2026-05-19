@@ -82,8 +82,16 @@ func ghUpdateFile(repo, path, branch, commitMsg, content string) error {
 	}
 	cmd := exec.Command("gh", args...)
 	cmd.Stdout = io.Discard
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("%s", msg)
+		}
+		return err
+	}
+	return nil
 }
 
 // ghReadFile fetches a text file from a repo at an optional ref (empty = default branch).
@@ -109,6 +117,12 @@ func ghGetLatestCommit(repo, branch string) (string, error) {
 		fmt.Sprintf("repos/%s/git/ref/heads/%s", repo, branch),
 		"--jq", ".object.sha",
 	)
+}
+
+// ghBranchExists returns true if the branch exists in the repo.
+func ghBranchExists(repo, branch string) bool {
+	_, err := ghGetLatestCommit(repo, branch)
+	return err == nil
 }
 
 // ghCreateBranch creates branch in repo from the tip of fromBranch.

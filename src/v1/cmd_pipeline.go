@@ -4,6 +4,20 @@ import "fmt"
 
 // ─── RESET PIPELINE ───────────────────────────────────────────────────────────
 
+// ghUpdateOnBranches updates a file on each branch that exists, silently skipping missing ones.
+func ghUpdateOnBranches(repo, path, commitMsg, content string, branches []string) error {
+	for _, branch := range branches {
+		if !ghBranchExists(repo, branch) {
+			fmt.Printf("   skipping branch %s (not found)\n", branch)
+			continue
+		}
+		if err := ghUpdateFile(repo, path, branch, commitMsg, content); err != nil {
+			return fmt.Errorf("branch %s: %w", branch, err)
+		}
+	}
+	return nil
+}
+
 func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) {
 	if saved == nil {
 		fatalExit(red("  ✗ No saved config for project " + projectName))
@@ -21,62 +35,52 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 		{
 			name: "Update backend workflow",
 			fn: func() error {
-				for _, branch := range []string{"main", "release"} {
-					if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/deploy.yml",
-						branch, "Reset deployment workflow", backendWorkflow); err != nil {
-						return fmt.Errorf("branch %s: %w", branch, err)
-					}
-				}
-				return nil
+				return ghUpdateOnBranches(cfg.BackendFork, ".github/workflows/deploy.yml",
+					"Reset deployment workflow", backendWorkflow, []string{"main", "release"})
 			},
 		},
 		{
 			name: "Update frontend workflow",
 			fn: func() error {
-				for _, branch := range []string{"main", "release"} {
-					if err := ghUpdateFile(cfg.FrontendFork, ".github/workflows/main.yml",
-						branch, "Reset deployment workflow", frontendWorkflow); err != nil {
-						return fmt.Errorf("branch %s: %w", branch, err)
-					}
-				}
-				return nil
+				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/main.yml",
+					"Reset deployment workflow", frontendWorkflow, []string{"main", "release"})
 			},
 		},
 		{
 			name: "Disable dev pipelines in forks",
 			fn: func() error {
-				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/deploy-dev.yml",
-					"main", "Disable dev pipeline in fork", devWorkflowDisabled); err != nil {
+				if err := ghUpdateOnBranches(cfg.BackendFork, ".github/workflows/deploy-dev.yml",
+					"Disable dev pipeline in fork", devWorkflowDisabled, []string{"main"}); err != nil {
 					return fmt.Errorf("backend: %w", err)
 				}
-				return ghUpdateFile(cfg.FrontendFork, ".github/workflows/deploy-dev.yml",
-					"main", "Disable dev pipeline in fork", devWorkflowDisabled)
+				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/deploy-dev.yml",
+					"Disable dev pipeline in fork", devWorkflowDisabled, []string{"main"})
 			},
 		},
 		{
 			name: "Update Sonic workflow",
 			fn: func() error {
-				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/sonic.yml",
-					"main", "Reset Sonic install workflow", sonicWorkflow); err != nil {
+				if err := ghUpdateOnBranches(cfg.BackendFork, ".github/workflows/sonic.yml",
+					"Reset Sonic install workflow", sonicWorkflow, []string{"main", "release"}); err != nil {
 					return fmt.Errorf("sonic workflow: %w", err)
 				}
-				if err := ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.cfg",
-					"main", "Reset Sonic config", sonicCfgFile); err != nil {
+				if err := ghUpdateOnBranches(cfg.BackendFork, ".github/sonic/sonic.cfg",
+					"Reset Sonic config", sonicCfgFile, []string{"main", "release"}); err != nil {
 					return fmt.Errorf("sonic config: %w", err)
 				}
-				return ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.service",
-					"main", "Reset Sonic service file", sonicServiceFile)
+				return ghUpdateOnBranches(cfg.BackendFork, ".github/sonic/sonic.service",
+					"Reset Sonic service file", sonicServiceFile, []string{"main", "release"})
 			},
 		},
 		{
 			name: "Update Qdrant workflow",
 			fn: func() error {
-				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/qdrant.yml",
-					"main", "Reset Qdrant install workflow", qdrantWorkflow); err != nil {
+				if err := ghUpdateOnBranches(cfg.BackendFork, ".github/workflows/qdrant.yml",
+					"Reset Qdrant install workflow", qdrantWorkflow, []string{"main", "release"}); err != nil {
 					return fmt.Errorf("qdrant workflow: %w", err)
 				}
-				return ghUpdateFile(cfg.BackendFork, ".github/qdrant/qdrant.service",
-					"main", "Reset Qdrant service file", qdrantServiceFile)
+				return ghUpdateOnBranches(cfg.BackendFork, ".github/qdrant/qdrant.service",
+					"Reset Qdrant service file", qdrantServiceFile, []string{"main", "release"})
 			},
 		},
 	}, 0, nil)

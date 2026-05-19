@@ -120,6 +120,7 @@ func main() {
 		fmt.Println("  4. Reset deployment pipeline")
 		fmt.Println("  5. Database diagnostics")
 		fmt.Println("  6. Search engine diagnostics")
+		fmt.Println("  7. Update GitHub token")
 		fmt.Println()
 
 		action := promptRequired("Enter choice")
@@ -138,6 +139,9 @@ func main() {
 			runDiagnostics(app, name, saved)
 		case "6":
 			runSonicDiagnostics(app, name, saved)
+		case "7":
+			runUpdateToken(app, name, saved)
+			saved = app.Projects[name]
 		default:
 			fmt.Println(red("Invalid choice."))
 		}
