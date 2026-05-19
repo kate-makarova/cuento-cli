@@ -258,3 +258,71 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 `
+
+// ─── Qdrant workflow ──────────────────────────────────────────────────────────
+
+const qdrantWorkflow = `name: Install Qdrant
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install-qdrant:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Qdrant
+        run: |
+          QDRANT_VERSION=$(curl -s https://api.github.com/repos/qdrant/qdrant/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          curl -L "https://github.com/qdrant/qdrant/releases/download/${QDRANT_VERSION}/qdrant-x86_64-unknown-linux-musl.tar.gz" -o qdrant.tar.gz
+          tar -xzf qdrant.tar.gz
+          mkdir -p deploy
+          cp qdrant deploy/qdrant
+          cp .github/qdrant/qdrant.service deploy/qdrant.service
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy/*"
+          target: "/tmp/qdrant-deploy/"
+          strip_components: 1
+
+      - name: Install and start Qdrant
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cp /tmp/qdrant-deploy/qdrant /usr/local/bin/qdrant
+            chmod 755 /usr/local/bin/qdrant
+            cp /tmp/qdrant-deploy/qdrant.service /etc/systemd/system/qdrant.service
+            id -u qdrant &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin qdrant
+            mkdir -p /var/lib/qdrant/storage
+            chown -R qdrant:qdrant /var/lib/qdrant
+            systemctl daemon-reload
+            systemctl enable qdrant
+            systemctl restart qdrant
+            rm -rf /tmp/qdrant-deploy
+`
+
+const qdrantServiceFile = `[Unit]
+Description=Qdrant Vector Search Engine
+After=network.target
+
+[Service]
+Type=simple
+User=qdrant
+ExecStart=/usr/local/bin/qdrant
+Restart=on-failure
+RestartSec=5
+Environment=QDRANT__STORAGE__STORAGE_PATH=/var/lib/qdrant/storage
+
+[Install]
+WantedBy=multi-user.target
+`

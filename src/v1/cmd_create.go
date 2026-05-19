@@ -117,8 +117,16 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 					"main", "Add Sonic config", sonicCfgFile); err != nil {
 					return fmt.Errorf("sonic config: %w", err)
 				}
-				return ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.service",
-					"main", "Add Sonic service file", sonicServiceFile)
+				if err := ghUpdateFile(cfg.BackendFork, ".github/sonic/sonic.service",
+					"main", "Add Sonic service file", sonicServiceFile); err != nil {
+					return fmt.Errorf("sonic service: %w", err)
+				}
+				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/qdrant.yml",
+					"main", "Add Qdrant install workflow", qdrantWorkflow); err != nil {
+					return fmt.Errorf("qdrant workflow: %w", err)
+				}
+				return ghUpdateFile(cfg.BackendFork, ".github/qdrant/qdrant.service",
+					"main", "Add Qdrant service file", qdrantServiceFile)
 			},
 		},
 		{
@@ -330,6 +338,18 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 					return err
 				}
 				fmt.Println(cyan("   The search engine is being installed in the background and will be ready in 10–15 minutes."))
+				return nil
+			},
+		},
+		{
+			name: "Trigger Qdrant install pipeline",
+			fn: func() error {
+				if err := runLocal("gh", "api",
+					fmt.Sprintf("repos/%s/actions/workflows/qdrant.yml/dispatches", cfg.BackendFork),
+					"-X", "POST", "-f", "ref=main"); err != nil {
+					return err
+				}
+				fmt.Println(cyan("   Qdrant is being installed in the background and will be ready in a few minutes."))
 				return nil
 			},
 		},

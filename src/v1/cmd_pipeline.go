@@ -68,6 +68,17 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 					"main", "Reset Sonic service file", sonicServiceFile)
 			},
 		},
+		{
+			name: "Update Qdrant workflow",
+			fn: func() error {
+				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/qdrant.yml",
+					"main", "Reset Qdrant install workflow", qdrantWorkflow); err != nil {
+					return fmt.Errorf("qdrant workflow: %w", err)
+				}
+				return ghUpdateFile(cfg.BackendFork, ".github/qdrant/qdrant.service",
+					"main", "Reset Qdrant service file", qdrantServiceFile)
+			},
+		},
 	}, 0, nil)
 
 	fmt.Println()

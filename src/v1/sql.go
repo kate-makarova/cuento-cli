@@ -134,12 +134,13 @@ func generateMigration(oldSQL, newSQL string) string {
 		}
 		// Table exists — find new or changed columns
 		for colName, colDef := range newCols {
+			cleanDef := strings.Join(strings.Fields(colDef), " ")
 			if oldDef, known := oldCols[colName]; !known {
 				stmts = append(stmts,
-					fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN %s;\n", tableName, colDef))
+					fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN %s;\n", tableName, cleanDef))
 			} else if normalizeColDef(oldDef) != normalizeColDef(colDef) {
 				stmts = append(stmts,
-					fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN %s;\n", tableName, colDef))
+					fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN %s;\n", tableName, cleanDef))
 			}
 		}
 	}
