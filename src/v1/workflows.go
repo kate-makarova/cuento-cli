@@ -97,7 +97,7 @@ jobs:
         run: npm ci
 
       - name: Build Angular app
-        run: npm run build -- --configuration production
+        run: npm run build
 
       - name: Clear old files (preserving custom styles and uploads)
         uses: appleboy/ssh-action@v1.0.3
@@ -303,7 +303,7 @@ jobs:
             chmod 755 /usr/local/bin/qdrant
             cp /tmp/qdrant-deploy/qdrant.service /etc/systemd/system/qdrant.service
             id -u qdrant &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin qdrant
-            mkdir -p /var/lib/qdrant/storage
+            mkdir -p /var/lib/qdrant/storage /var/lib/qdrant/snapshots
             chown -R qdrant:qdrant /var/lib/qdrant
             systemctl daemon-reload
             systemctl enable qdrant
@@ -318,6 +318,7 @@ After=network.target
 [Service]
 Type=simple
 User=qdrant
+WorkingDirectory=/var/lib/qdrant
 ExecStart=/usr/local/bin/qdrant
 Restart=on-failure
 RestartSec=5
