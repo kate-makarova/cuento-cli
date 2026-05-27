@@ -306,30 +306,6 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 			},
 		},
 		{
-			name: "Record deployed backend commit hash",
-			fn: func() error {
-				sha, err := ghGetLatestCommit(upstreamBackend, trackBranch)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("   %s @ %s\n", upstreamBackend, sha)
-				return ghUpdateFile(cfg.BackendFork, deployedCommitFile, trackBranch,
-					"Record last deployed upstream commit", sha+"\n")
-			},
-		},
-		{
-			name: "Record deployed frontend commit hash",
-			fn: func() error {
-				sha, err := ghGetLatestCommit(upstreamFrontend, trackBranch)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("   %s @ %s\n", upstreamFrontend, sha)
-				return ghUpdateFile(cfg.FrontendFork, deployedFrontendCommitFile, trackBranch,
-					"Record last deployed upstream commit", sha+"\n")
-			},
-		},
-		{
 			name: "Trigger Sonic install pipeline",
 			fn: func() error {
 				if err := runLocal("gh", "api",

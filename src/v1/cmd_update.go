@@ -57,12 +57,11 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 		{
 			name: "Read last deployed backend commit",
 			fn: func() error {
-				content, err := ghReadFile(cfg.BackendFork, deployedCommitFile, trackBranch)
+				lastSHA, err := ghGetMergeBase(upstreamBackend, cfg.BackendFork, trackBranch)
 				if err != nil {
-					return fmt.Errorf("could not read %s — has this project been set up with 'create'? %w",
-						deployedCommitFile, err)
+					return fmt.Errorf("could not determine last synced backend commit: %w", err)
 				}
-				lastSHA := strings.TrimSpace(content)
+				lastSHA = strings.TrimSpace(lastSHA)
 				newBackendSHA, err = ghGetLatestCommit(upstreamBackend, trackBranch)
 				if err != nil {
 					return err
@@ -120,20 +119,11 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 		{
 			name: "Read last deployed frontend commit",
 			fn: func() error {
-				content, err := ghReadFile(cfg.FrontendFork, deployedFrontendCommitFile, trackBranch)
+				lastSHA, err := ghGetMergeBase(upstreamFrontend, cfg.FrontendFork, trackBranch)
 				if err != nil {
-					// File doesn't exist yet (project set up before this feature).
-					// Record current upstream commit and skip diff detection.
-					fmt.Println(yellow("   Commit file not found — initialising frontend tracking."))
-					newFrontendSHA, err = ghGetLatestCommit(upstreamFrontend, trackBranch)
-					if err != nil {
-						return err
-					}
-					fmt.Printf("   Recording %s\n", newFrontendSHA)
-					return ghUpdateFile(cfg.FrontendFork, deployedFrontendCommitFile, trackBranch,
-						"Record last deployed upstream commit", newFrontendSHA+"\n")
+					return fmt.Errorf("could not determine last synced frontend commit: %w", err)
 				}
-				lastSHA := strings.TrimSpace(content)
+				lastSHA = strings.TrimSpace(lastSHA)
 				newFrontendSHA, err = ghGetLatestCommit(upstreamFrontend, trackBranch)
 				if err != nil {
 					return err
@@ -196,22 +186,6 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 			name: "Merge upstream into frontend fork",
 			fn: func() error {
 				return ghMergeUpstream(cfg.FrontendFork, trackBranch)
-			},
-		},
-		{
-			name: "Record new deployed backend commit hash",
-			fn: func() error {
-				fmt.Printf("   Recording %s\n", newBackendSHA)
-				return ghUpdateFile(cfg.BackendFork, deployedCommitFile, trackBranch,
-					"Update last deployed upstream commit", newBackendSHA+"\n")
-			},
-		},
-		{
-			name: "Record new deployed frontend commit hash",
-			fn: func() error {
-				fmt.Printf("   Recording %s\n", newFrontendSHA)
-				return ghUpdateFile(cfg.FrontendFork, deployedFrontendCommitFile, trackBranch,
-					"Update last deployed upstream commit", newFrontendSHA+"\n")
 			},
 		},
 	}, 0, nil)

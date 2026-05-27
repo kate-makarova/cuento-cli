@@ -119,6 +119,16 @@ func ghGetLatestCommit(repo, branch string) (string, error) {
 	)
 }
 
+// ghGetMergeBase returns the SHA of the last upstream commit that has been merged into the fork branch.
+// It uses GitHub's compare API to find the common ancestor between the fork and the upstream.
+func ghGetMergeBase(upstreamRepo, forkRepo, branch string) (string, error) {
+	forkOwner := strings.SplitN(forkRepo, "/", 2)[0]
+	return localOutput("gh", "api",
+		fmt.Sprintf("repos/%s/compare/%s:%s...%s", upstreamRepo, forkOwner, branch, branch),
+		"--jq", ".merge_base_commit.sha",
+	)
+}
+
 // ghBranchExists returns true if the branch exists in the repo.
 func ghBranchExists(repo, branch string) bool {
 	_, err := ghGetLatestCommit(repo, branch)

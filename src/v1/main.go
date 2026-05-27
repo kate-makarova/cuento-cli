@@ -10,12 +10,10 @@ import (
 // ─── Upstream repos ───────────────────────────────────────────────────────────
 
 const (
-	upstreamBackend            = "kate-makarova/cuento-backend"
-	upstreamFrontend           = "kate-makarova/cuento-frontend"
-	trackBranch                = "release"
-	deployedCommitFile         = "deployments/last-deployed-commit"
-	deployedFrontendCommitFile = "deployments/last-deployed-commit"
-	sqlFile                    = "src/Install/default_tables.sql"
+	upstreamBackend  = "kate-makarova/cuento-backend"
+	upstreamFrontend = "kate-makarova/cuento-frontend"
+	trackBranch      = "release"
+	sqlFile          = "src/Install/default_tables.sql"
 )
 
 // ─── Banner & main ────────────────────────────────────────────────────────────
@@ -23,7 +21,7 @@ const (
 func printBanner() {
 	fmt.Println()
 	fmt.Println(bold(colorBlue + "╔══════════════════════════════════════╗" + colorReset))
-	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.5.1            ║" + colorReset))
+	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.5.2            ║" + colorReset))
 	fmt.Println(bold(colorBlue + "╚══════════════════════════════════════╝" + colorReset))
 	fmt.Println()
 }
