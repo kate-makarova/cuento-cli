@@ -9,7 +9,15 @@ import (
 
 // ─── UPDATE ───────────────────────────────────────────────────────────────────
 
+func runUpdateMonitor(app *AppConfig, projectName string, saved *ProjectConfig) {
+	runUpdateWithBranch(app, projectName, saved, "monitor")
+}
+
 func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
+	runUpdateWithBranch(app, projectName, saved, trackBranch)
+}
+
+func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfig, branch string) {
 	if saved == nil {
 		fatalExit(red("  ✗ No saved config for project " + projectName))
 	}
@@ -57,12 +65,12 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 		{
 			name: "Read last deployed backend commit",
 			fn: func() error {
-				lastSHA, err := ghGetMergeBase(upstreamBackend, cfg.BackendFork, trackBranch)
+				lastSHA, err := ghGetMergeBase(upstreamBackend, cfg.BackendFork, branch)
 				if err != nil {
 					return fmt.Errorf("could not determine last synced backend commit: %w", err)
 				}
 				lastSHA = strings.TrimSpace(lastSHA)
-				newBackendSHA, err = ghGetLatestCommit(upstreamBackend, trackBranch)
+				newBackendSHA, err = ghGetLatestCommit(upstreamBackend, branch)
 				if err != nil {
 					return err
 				}
@@ -119,12 +127,12 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 		{
 			name: "Read last deployed frontend commit",
 			fn: func() error {
-				lastSHA, err := ghGetMergeBase(upstreamFrontend, cfg.FrontendFork, trackBranch)
+				lastSHA, err := ghGetMergeBase(upstreamFrontend, cfg.FrontendFork, branch)
 				if err != nil {
 					return fmt.Errorf("could not determine last synced frontend commit: %w", err)
 				}
 				lastSHA = strings.TrimSpace(lastSHA)
-				newFrontendSHA, err = ghGetLatestCommit(upstreamFrontend, trackBranch)
+				newFrontendSHA, err = ghGetLatestCommit(upstreamFrontend, branch)
 				if err != nil {
 					return err
 				}
@@ -179,13 +187,13 @@ func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 		{
 			name: "Merge upstream into backend fork",
 			fn: func() error {
-				return ghMergeUpstream(cfg.BackendFork, trackBranch)
+				return ghMergeUpstream(cfg.BackendFork, branch)
 			},
 		},
 		{
 			name: "Merge upstream into frontend fork",
 			fn: func() error {
-				return ghMergeUpstream(cfg.FrontendFork, trackBranch)
+				return ghMergeUpstream(cfg.FrontendFork, branch)
 			},
 		},
 	}, 0, nil)
