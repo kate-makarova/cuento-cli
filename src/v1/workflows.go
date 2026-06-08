@@ -1,8 +1,11 @@
 package main
 
+import "fmt"
+
 // ─── Workflow templates ───────────────────────────────────────────────────────
 
-const backendWorkflow = `name: Build and Deploy Cuento
+func backendWorkflow(projectName string) string {
+	return fmt.Sprintf(`name: Build and Deploy Cuento
 
 on:
   push:
@@ -53,8 +56,11 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             chmod +x /var/www/backend/cuento-backend
+            grep -v '^PROJECT_NAME=' /etc/environment > /tmp/env.tmp && mv /tmp/env.tmp /etc/environment || true
+            echo 'PROJECT_NAME=%s' >> /etc/environment
             systemctl restart cuento-backend
-`
+`, projectName)
+}
 
 // devWorkflowDisabled replaces the upstream dev pipeline in a fork so that
 // writes to main (e.g. workflow resets) do not trigger unintended dev deploys.
@@ -71,7 +77,8 @@ jobs:
         run: echo "Dev pipeline is disabled in this fork. Use the release branch."
 `
 
-const frontendWorkflow = `name: Deploy Cuento Frontend
+func frontendWorkflow(projectName string) string {
+	return fmt.Sprintf(`name: Deploy Cuento Frontend
 
 on:
   push:
@@ -137,7 +144,10 @@ jobs:
             chown -R www-data:www-data /var/www/frontend
             chmod -R 775 /var/www/frontend
             rm -rf /tmp/frontend_staging
-`
+            grep -v '^PROJECT_NAME=' /etc/environment > /tmp/env.tmp && mv /tmp/env.tmp /etc/environment || true
+            echo 'PROJECT_NAME=%s' >> /etc/environment
+`, projectName)
+}
 
 // ─── Sonic workflow ───────────────────────────────────────────────────────────
 

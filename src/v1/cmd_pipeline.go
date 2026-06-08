@@ -36,14 +36,14 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 			name: "Update backend workflow",
 			fn: func() error {
 				return ghUpdateOnBranches(cfg.BackendFork, ".github/workflows/deploy.yml",
-					"Reset deployment workflow", backendWorkflow, []string{"main", "release"})
+					"Reset deployment workflow", backendWorkflow(cfg.ProjectName), []string{"main", "release"})
 			},
 		},
 		{
 			name: "Update frontend workflow",
 			fn: func() error {
 				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/main.yml",
-					"Reset deployment workflow", frontendWorkflow, []string{"main", "release"})
+					"Reset deployment workflow", frontendWorkflow(cfg.ProjectName), []string{"main", "release"})
 			},
 		},
 		{

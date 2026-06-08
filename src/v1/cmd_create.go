@@ -93,11 +93,11 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 			name: "Update workflows in forks",
 			fn: func() error {
 				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/deploy.yml",
-					"main", "Configure workflow for release branch", backendWorkflow); err != nil {
+					"main", "Configure workflow for release branch", backendWorkflow(cfg.ProjectName)); err != nil {
 					return fmt.Errorf("backend: %w", err)
 				}
 				if err := ghUpdateFile(cfg.FrontendFork, ".github/workflows/main.yml",
-					"main", "Configure workflow for release branch", frontendWorkflow); err != nil {
+					"main", "Configure workflow for release branch", frontendWorkflow(cfg.ProjectName)); err != nil {
 					return fmt.Errorf("frontend: %w", err)
 				}
 				// Disable the upstream dev pipelines so writes to main don't trigger dev deploys.
