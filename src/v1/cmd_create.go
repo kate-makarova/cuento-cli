@@ -142,8 +142,15 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 				if err := ghCreateBranch(cfg.FrontendFork, "monitor", "main"); err != nil {
 					return err
 				}
-				return ghUpdateFile(cfg.FrontendFork, ".github/workflows/main.yml",
-					"monitor", "Configure monitor deployment workflow", frontendMonitorWorkflow(cfg.ProjectName))
+				if err := ghMergeUpstream(cfg.FrontendFork, "monitor"); err != nil {
+					return err
+				}
+				if err := ghUpdateFile(cfg.FrontendFork, ".github/workflows/monitor.yml",
+					"main", "Add monitor deployment workflow", frontendMonitorWorkflow(cfg.ProjectName)); err != nil {
+					return err
+				}
+				return ghUpdateFile(cfg.FrontendFork, ".github/workflows/monitor.yml",
+					"monitor", "Add monitor deployment workflow", frontendMonitorWorkflow(cfg.ProjectName))
 			},
 		},
 		{

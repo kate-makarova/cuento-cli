@@ -9,10 +9,6 @@ import (
 
 // ─── UPDATE ───────────────────────────────────────────────────────────────────
 
-func runUpdateMonitor(app *AppConfig, projectName string, saved *ProjectConfig) {
-	runUpdateWithBranch(app, projectName, saved, "monitor")
-}
-
 func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
 	runUpdateWithBranch(app, projectName, saved, trackBranch)
 }

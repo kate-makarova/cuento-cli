@@ -35,15 +35,9 @@ func runDeployMonitorPipeline(app *AppConfig, projectName string, saved *Project
 			fn:   func() error { return authGitHub(cfg) },
 		},
 		{
-			name: "Trigger frontend monitor pipeline",
+			name: "Merge upstream into frontend monitor branch",
 			fn: func() error {
-				if err := runLocal("gh", "api",
-					fmt.Sprintf("repos/%s/actions/workflows/main.yml/dispatches", cfg.FrontendFork),
-					"-X", "POST", "-f", "ref=monitor"); err != nil {
-					return err
-				}
-				fmt.Println(cyan("   Frontend monitor build triggered on the monitor branch."))
-				return nil
+				return ghMergeUpstream(cfg.FrontendFork, "monitor")
 			},
 		},
 	}, 0, nil)
@@ -80,10 +74,22 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 			},
 		},
 		{
+			name: "Ensure monitor branch exists in frontend fork",
+			fn: func() error {
+				return ghCreateBranch(cfg.FrontendFork, "monitor", "main")
+			},
+		},
+		{
+			name: "Sync monitor branch with upstream",
+			fn: func() error {
+				return ghMergeUpstream(cfg.FrontendFork, "monitor")
+			},
+		},
+		{
 			name: "Update frontend monitor workflow",
 			fn: func() error {
-				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/main.yml",
-					"Reset monitoring deployment workflow", frontendMonitorWorkflow(cfg.ProjectName), []string{"monitor"})
+				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/monitor.yml",
+					"Reset monitoring deployment workflow", frontendMonitorWorkflow(cfg.ProjectName), []string{"main", "release", "monitor"})
 			},
 		},
 		{
