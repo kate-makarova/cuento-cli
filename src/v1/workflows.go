@@ -149,6 +149,84 @@ jobs:
 `, projectName)
 }
 
+func frontendMonitorWorkflow(projectName string) string {
+	return fmt.Sprintf(`name: Deploy Cuento Frontend (Monitor)
+
+on:
+  push:
+    branches: [monitor]
+    paths-ignore:
+      - 'deployments/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Angular app
+        env:
+          NR_LICENSE_KEY: NRJS-eaf1ced05e840d0e77f
+          NR_APP_ID: "1103511252"
+          NR_ACCOUNT_ID: "8128948"
+        run: |
+          npm run build
+          node custom-templates.plugin.mjs --configuration production
+
+      - name: Clear old files (preserving custom styles and uploads)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            find /var/www/frontend -mindepth 1 \
+              ! -name 'favicon*' \
+              ! -name 'main_style*' \
+              ! -name 'custom_style*' \
+              ! -path '/var/www/frontend/reactions' \
+              ! -path '/var/www/frontend/reactions/*' \
+              -delete
+            mkdir -p /var/www/frontend/reactions
+
+      - name: Deploy to temporary staging
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "dist/cuento-frontend/browser/*"
+          target: "/tmp/frontend_staging"
+          strip_components: 3
+          overwrite: true
+
+      - name: Move to target and fix permissions
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cp -rn /tmp/frontend_staging/* /var/www/frontend/
+            chown -R www-data:www-data /var/www/frontend
+            chmod -R 775 /var/www/frontend
+            rm -rf /tmp/frontend_staging
+            grep -v '^PROJECT_NAME=' /etc/environment > /tmp/env.tmp && mv /tmp/env.tmp /etc/environment || true
+            echo 'PROJECT_NAME=%s' >> /etc/environment
+`, projectName)
+}
+
 // ─── Sonic workflow ───────────────────────────────────────────────────────────
 
 const sonicWorkflow = `name: Install Sonic

@@ -130,7 +130,7 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 			},
 		},
 		{
-			name: "Create release branch in forks",
+			name: "Create release and monitor branches in forks",
 			fn: func() error {
 				for _, fork := range []string{cfg.BackendFork, cfg.FrontendFork} {
 					fmt.Printf("   %s → release\n", fork)
@@ -138,7 +138,12 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 						return err
 					}
 				}
-				return nil
+				fmt.Printf("   %s → monitor\n", cfg.FrontendFork)
+				if err := ghCreateBranch(cfg.FrontendFork, "monitor", "main"); err != nil {
+					return err
+				}
+				return ghUpdateFile(cfg.FrontendFork, ".github/workflows/main.yml",
+					"monitor", "Configure monitor deployment workflow", frontendMonitorWorkflow(cfg.ProjectName))
 			},
 		},
 		{

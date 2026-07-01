@@ -18,6 +18,39 @@ func ghUpdateOnBranches(repo, path, commitMsg, content string, branches []string
 	return nil
 }
 
+func runDeployMonitorPipeline(app *AppConfig, projectName string, saved *ProjectConfig) {
+	if saved == nil {
+		fatalExit(red("  ✗ No saved config for project " + projectName))
+	}
+
+	cfg := &Config{}
+	cfg.ProjectName = projectName
+	cfg.GitHubToken = saved.GitHubToken
+	cfg.GitHubUser = saved.GitHubUser
+	cfg.FrontendFork = saved.GitHubUser + "/" + projectName + "-frontend"
+
+	runSteps([]step{
+		{
+			name: "Authenticate with GitHub",
+			fn:   func() error { return authGitHub(cfg) },
+		},
+		{
+			name: "Trigger frontend monitor pipeline",
+			fn: func() error {
+				if err := runLocal("gh", "api",
+					fmt.Sprintf("repos/%s/actions/workflows/main.yml/dispatches", cfg.FrontendFork),
+					"-X", "POST", "-f", "ref=monitor"); err != nil {
+					return err
+				}
+				fmt.Println(cyan("   Frontend monitor build triggered on the monitor branch."))
+				return nil
+			},
+		},
+	}, 0, nil)
+
+	fmt.Println()
+}
+
 func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) {
 	if saved == nil {
 		fatalExit(red("  ✗ No saved config for project " + projectName))
@@ -44,6 +77,13 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 			fn: func() error {
 				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/main.yml",
 					"Reset deployment workflow", frontendWorkflow(cfg.ProjectName), []string{"main", "release"})
+			},
+		},
+		{
+			name: "Update frontend monitor workflow",
+			fn: func() error {
+				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/main.yml",
+					"Reset monitoring deployment workflow", frontendMonitorWorkflow(cfg.ProjectName), []string{"monitor"})
 			},
 		},
 		{
