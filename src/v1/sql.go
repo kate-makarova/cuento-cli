@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -110,26 +111,95 @@ func extractInserts(sql string) []string {
 	return inserts
 }
 
+var reFKRef = regexp.MustCompile(`(?i)REFERENCES\s+` + "`?(\\w+)`?")
+
+// fkDeps returns the set of table names that tableDDL references via FOREIGN KEY.
+func fkDeps(tableDDL string) map[string]bool {
+	deps := map[string]bool{}
+	for _, m := range reFKRef.FindAllStringSubmatch(tableDDL, -1) {
+		deps[strings.ToLower(m[1])] = true
+	}
+	return deps
+}
+
+// topoSort returns newTableNames ordered so that every table appears after the
+// tables it depends on (via FK). Tables with no ordering constraint are sorted
+// alphabetically for determinism.
+func topoSort(newTableNames []string, ddlOf map[string]string) []string {
+	deps := make(map[string]map[string]bool, len(newTableNames))
+	newSet := make(map[string]bool, len(newTableNames))
+	for _, t := range newTableNames {
+		newSet[t] = true
+	}
+	for _, t := range newTableNames {
+		d := fkDeps(ddlOf[t])
+		// Only count deps that are also new tables (existing tables are already there).
+		filtered := map[string]bool{}
+		for ref := range d {
+			if newSet[ref] && ref != t {
+				filtered[ref] = true
+			}
+		}
+		deps[t] = filtered
+	}
+
+	var sorted []string
+	visited := map[string]bool{}
+	var visit func(t string)
+	visit = func(t string) {
+		if visited[t] {
+			return
+		}
+		visited[t] = true
+		refs := make([]string, 0, len(deps[t]))
+		for r := range deps[t] {
+			refs = append(refs, r)
+		}
+		sort.Strings(refs)
+		for _, r := range refs {
+			visit(r)
+		}
+		sorted = append(sorted, t)
+	}
+	alpha := make([]string, len(newTableNames))
+	copy(alpha, newTableNames)
+	sort.Strings(alpha)
+	for _, t := range alpha {
+		visit(t)
+	}
+	return sorted
+}
+
 // generateMigration compares two SQL schemas and returns the migration SQL needed
 // to bring the old schema up to the new one (new tables, new columns, new inserts).
 func generateMigration(oldSQL, newSQL string) string {
 	oldTables := parseTables(oldSQL)
 	newTables := parseTables(newSQL)
 
+	// Collect DDL blocks for new tables and sort them by FK dependency order.
+	newTableDDL := map[string]string{}
+	for _, mm := range reCreateTable.FindAllStringSubmatch(newSQL, -1) {
+		newTableDDL[strings.ToLower(mm[1])] = mm[0]
+	}
+	var newTableNames []string
+	for tableName := range newTables {
+		if _, exists := oldTables[tableName]; !exists {
+			newTableNames = append(newTableNames, tableName)
+		}
+	}
+	orderedNew := topoSort(newTableNames, newTableDDL)
+
 	var stmts []string
+
+	for _, tableName := range orderedNew {
+		if ddl, ok := newTableDDL[tableName]; ok {
+			stmts = append(stmts, ddl+";\n")
+		}
+	}
 
 	for tableName, newCols := range newTables {
 		oldCols, exists := oldTables[tableName]
 		if !exists {
-			// Entire table is new — emit the full CREATE TABLE block
-			if m := reCreateTable.FindStringSubmatch(newSQL); m != nil {
-				for _, mm := range reCreateTable.FindAllStringSubmatch(newSQL, -1) {
-					if strings.ToLower(mm[1]) == tableName {
-						stmts = append(stmts, mm[0]+";\n")
-						break
-					}
-				}
-			}
 			continue
 		}
 		// Table exists — find new or changed columns
