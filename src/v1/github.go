@@ -105,7 +105,11 @@ func ghReadFile(repo, path, ref string) (string, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("%w\n%s", err, strings.TrimSpace(stderr.String()))
+		msg := strings.TrimSpace(stderr.String())
+		if strings.Contains(msg, "invalid character '<'") {
+			return "", fmt.Errorf("%w\nGitHub returned an HTML page instead of JSON — your token may have expired or lack the required scope. Run: gh auth login", err)
+		}
+		return "", fmt.Errorf("%w\n%s", err, msg)
 	}
 	raw := strings.ReplaceAll(strings.TrimSpace(string(out)), "\n", "")
 	decoded, err := base64.StdEncoding.DecodeString(raw)

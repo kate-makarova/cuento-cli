@@ -119,8 +119,11 @@ jobs:
               ! -name 'custom_style*' \
               ! -path '/var/www/frontend/reactions' \
               ! -path '/var/www/frontend/reactions/*' \
+              ! -path '/var/www/frontend/avatars' \
+              ! -path '/var/www/frontend/avatars/*' \
               -delete
             mkdir -p /var/www/frontend/reactions
+            mkdir -p /var/www/frontend/avatars
 
       - name: Deploy to temporary staging
         uses: appleboy/scp-action@v0.1.7
@@ -197,8 +200,11 @@ jobs:
               ! -name 'custom_style*' \
               ! -path '/var/www/frontend/reactions' \
               ! -path '/var/www/frontend/reactions/*' \
+              ! -path '/var/www/frontend/avatars' \
+              ! -path '/var/www/frontend/avatars/*' \
               -delete
             mkdir -p /var/www/frontend/reactions
+            mkdir -p /var/www/frontend/avatars
 
       - name: Deploy to temporary staging
         uses: appleboy/scp-action@v0.1.7
