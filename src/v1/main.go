@@ -120,6 +120,7 @@ func main() {
 		fmt.Println("  6. Search engine diagnostics")
 		fmt.Println("  7. Update GitHub token")
 		fmt.Println("  8. Deploy monitoring branch")
+		fmt.Println("  9. Set superuser")
 		fmt.Println()
 
 		action := promptRequired("Enter choice")
@@ -143,6 +144,8 @@ func main() {
 			saved = app.Projects[name]
 		case "8":
 			runDeployMonitorPipeline(app, name, saved)
+		case "9":
+			runSetSuperuser(app, name, saved)
 		default:
 			fmt.Println(red("Invalid choice."))
 		}
