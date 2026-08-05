@@ -30,20 +30,15 @@ func runSetSuperuser(app *AppConfig, projectName string, saved *ProjectConfig) {
 			},
 		},
 		{
-			name: "Set SUPERUSER_ID environment variable on server",
+			name: "Set SUPERUSER_ID in systemd service and restart",
 			fn: func() error {
 				script := fmt.Sprintf(
-					`grep -v '^SUPERUSER_ID=' /etc/environment > /tmp/env.tmp && mv /tmp/env.tmp /etc/environment || true
-echo 'SUPERUSER_ID=%s' >> /etc/environment`,
+					`sed -i '/^Environment="SUPERUSER_ID=/d' /etc/systemd/system/cuento-backend.service
+sed -i '/^\[Install\]/i Environment="SUPERUSER_ID=%s"' /etc/systemd/system/cuento-backend.service
+systemctl daemon-reload && systemctl restart cuento-backend`,
 					strings.TrimSpace(superuserID),
 				)
 				return remote.run(script)
-			},
-		},
-		{
-			name: "Restart backend service",
-			fn: func() error {
-				return remote.run(`systemctl restart cuento-backend`)
 			},
 		},
 	}, 0, nil)
