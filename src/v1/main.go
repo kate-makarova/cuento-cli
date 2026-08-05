@@ -21,7 +21,7 @@ const (
 func printBanner() {
 	fmt.Println()
 	fmt.Println(bold(colorBlue + "╔══════════════════════════════════════╗" + colorReset))
-	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.6.5            ║" + colorReset))
+	fmt.Println(bold(colorBlue + "║          Cuento CLI 1.7.0            ║" + colorReset))
 	fmt.Println(bold(colorBlue + "╚══════════════════════════════════════╝" + colorReset))
 	fmt.Println()
 }
@@ -121,6 +121,7 @@ func main() {
 		fmt.Println("  7. Update GitHub token")
 		fmt.Println("  8. Deploy monitoring branch")
 		fmt.Println("  9. Set superuser")
+		fmt.Println("  10. Database backup")
 		fmt.Println()
 
 		action := promptRequired("Enter choice")
@@ -146,6 +147,8 @@ func main() {
 			runDeployMonitorPipeline(app, name, saved)
 		case "9":
 			runSetSuperuser(app, name, saved)
+		case "10":
+			runDatabaseBackup(app, name, saved)
 		default:
 			fmt.Println(red("Invalid choice."))
 		}
