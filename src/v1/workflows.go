@@ -56,6 +56,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             chmod +x /var/www/backend/cuento-backend
+            chown -R cuento:cuento /var/www/backend/locales
             grep -v '^PROJECT_NAME=' /etc/environment > /tmp/env.tmp && mv /tmp/env.tmp /etc/environment || true
             echo 'PROJECT_NAME=%s' >> /etc/environment
             systemctl restart cuento-backend
