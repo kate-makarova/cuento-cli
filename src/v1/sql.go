@@ -170,11 +170,64 @@ func topoSort(newTableNames []string, ddlOf map[string]string) []string {
 	return sorted
 }
 
+// parseTablePKs returns the primary-key column set for each table.
+func parseTablePKs(sql string) map[string][]string {
+	pks := make(map[string][]string)
+	for _, m := range reCreateTable.FindAllStringSubmatch(sql, -1) {
+		name := strings.ToLower(m[1])
+		body := m[2]
+		var pkCols []string
+		// Standalone PRIMARY KEY (col, ...) clause takes precedence.
+		if pm := rePKCols.FindStringSubmatch(strings.ReplaceAll(body, "\n", " ")); pm != nil {
+			for _, c := range strings.Split(pm[1], ",") {
+				pkCols = append(pkCols, strings.ToLower(strings.Trim(strings.TrimSpace(c), "`")))
+			}
+		} else {
+			// Fall back to inline PRIMARY KEY on a column line.
+			for _, line := range strings.Split(body, "\n") {
+				line = strings.TrimSpace(strings.TrimRight(line, ","))
+				upper := strings.ToUpper(line)
+				if strings.HasPrefix(upper, "PRIMARY ") || strings.HasPrefix(upper, "UNIQUE ") ||
+					strings.HasPrefix(upper, "KEY ") || strings.HasPrefix(upper, "INDEX ") ||
+					strings.HasPrefix(upper, "CONSTRAINT ") || strings.HasPrefix(upper, "FOREIGN ") {
+					continue
+				}
+				if cm := reColumnName.FindStringSubmatch(line); len(cm) > 1 {
+					if strings.Contains(upper, "PRIMARY KEY") {
+						pkCols = append(pkCols, strings.ToLower(cm[1]))
+					}
+				}
+			}
+		}
+		pks[name] = pkCols
+	}
+	return pks
+}
+
+func pkSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	as, bs := make([]string, len(a)), make([]string, len(b))
+	copy(as, a)
+	copy(bs, b)
+	sort.Strings(as)
+	sort.Strings(bs)
+	for i := range as {
+		if as[i] != bs[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // generateMigration compares two SQL schemas and returns the migration SQL needed
 // to bring the old schema up to the new one (new tables, new columns, new inserts).
 func generateMigration(oldSQL, newSQL string) string {
 	oldTables := parseTables(oldSQL)
 	newTables := parseTables(newSQL)
+	oldPKs := parseTablePKs(oldSQL)
+	newPKs := parseTablePKs(newSQL)
 
 	// Collect DDL blocks for new tables and sort them by FK dependency order.
 	newTableDDL := map[string]string{}
@@ -197,25 +250,51 @@ func generateMigration(oldSQL, newSQL string) string {
 		}
 	}
 
-	for tableName, newCols := range newTables {
+	// Sort table names for deterministic output.
+	tableNames := make([]string, 0, len(newTables))
+	for t := range newTables {
+		tableNames = append(tableNames, t)
+	}
+	sort.Strings(tableNames)
+
+	for _, tableName := range tableNames {
+		newCols := newTables[tableName]
 		oldCols, exists := oldTables[tableName]
 		if !exists {
 			continue
 		}
-		// Table exists — find new or changed columns
-		for colName, colDef := range newCols {
+
+		pkChanged := len(oldPKs[tableName]) > 0 && !pkSetsEqual(oldPKs[tableName], newPKs[tableName])
+
+		var ops []string
+		if pkChanged {
+			ops = append(ops, "DROP PRIMARY KEY")
+		}
+
+		// Sort column names for deterministic output.
+		colNames := make([]string, 0, len(newCols))
+		for c := range newCols {
+			colNames = append(colNames, c)
+		}
+		sort.Strings(colNames)
+
+		for _, colName := range colNames {
+			colDef := newCols[colName]
 			cleanDef := strings.Join(strings.Fields(colDef), " ")
 			if oldDef, known := oldCols[colName]; !known {
-				stmts = append(stmts,
-					fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN %s;\n", tableName, cleanDef))
+				ops = append(ops, fmt.Sprintf("ADD COLUMN %s", cleanDef))
 			} else if normalizeColDef(oldDef) != normalizeColDef(colDef) {
-				stmts = append(stmts,
-					fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN %s;\n", tableName, cleanDef))
+				ops = append(ops, fmt.Sprintf("MODIFY COLUMN %s", cleanDef))
 			}
+		}
+
+		if len(ops) > 0 {
+			stmts = append(stmts,
+				fmt.Sprintf("ALTER TABLE `%s`\n  %s;\n", tableName, strings.Join(ops, ",\n  ")))
 		}
 	}
 
-	// Find INSERT statements present in new but not in old
+	// Find INSERT statements present in new but not in old.
 	oldInserts := make(map[string]bool)
 	for _, ins := range extractInserts(oldSQL) {
 		oldInserts[ins] = true
