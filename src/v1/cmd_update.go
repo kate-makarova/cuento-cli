@@ -52,7 +52,7 @@ func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfi
 	var remote *Remote
 
 	// SQL diff and commit SHAs are computed mid-flow; captured here for later steps.
-	var migrationSQL string
+	var migrationSteps []MigrationStep
 	var mainGoChanged bool
 	var pipelineChanged bool
 	var newBackendSHA, newFrontendSHA string
@@ -89,16 +89,18 @@ func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfi
 					return fmt.Errorf("fetching SQL at latest commit: %w", err)
 				}
 
-				migrationSQL = generateMigration(oldSQL, newSQL)
-				if migrationSQL == "" {
+				migrationSteps = generateMigration(oldSQL, newSQL)
+				if len(migrationSteps) == 0 {
 					fmt.Println(green("   SQL schema unchanged — no migration needed."))
 				} else {
 					fmt.Println(yellow("   Migration SQL generated:"))
 					fmt.Println()
-					for _, line := range strings.Split(strings.TrimSpace(migrationSQL), "\n") {
-						fmt.Println("   " + line)
+					for _, step := range migrationSteps {
+						for _, line := range strings.Split(strings.TrimSpace(step.Forward), "\n") {
+							fmt.Println("   " + line)
+						}
+						fmt.Println()
 					}
-					fmt.Println()
 				}
 
 				// Check if main.go or .github/ changed
@@ -166,7 +168,7 @@ func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfi
 		{
 			name: "Run database migration",
 			fn: func() error {
-				if migrationSQL == "" {
+				if len(migrationSteps) == 0 {
 					fmt.Println("   Nothing to migrate.")
 					return nil
 				}
@@ -174,10 +176,27 @@ func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfi
 					fmt.Println(yellow("   Skipped by user."))
 					return nil
 				}
-				return remote.runWithInput(
-					fmt.Sprintf(`MYSQL_PWD='%s' mysql -u %s %s`, cfg.DBPass, cfg.DBUser, cfg.DBName),
-					migrationSQL,
-				)
+				mysqlCmd := fmt.Sprintf(`MYSQL_PWD='%s' mysql -u %s %s`, cfg.DBPass, cfg.DBUser, cfg.DBName)
+				var applied []MigrationStep
+				for i, step := range migrationSteps {
+					fmt.Printf("   [%d/%d] Applying...\n", i+1, len(migrationSteps))
+					if err := remote.runWithInput(mysqlCmd, step.Forward); err != nil {
+						fmt.Println(red("   ✗ Step failed — reverting applied changes..."))
+						for j := len(applied) - 1; j >= 0; j-- {
+							if applied[j].Revert == "" {
+								continue
+							}
+							if revertErr := remote.runWithInput(mysqlCmd, applied[j].Revert); revertErr != nil {
+								fmt.Printf(red("   ✗ Revert of step %d failed: %v\n"), j+1, revertErr)
+							} else {
+								fmt.Printf("   ✓ Reverted step %d\n", j+1)
+							}
+						}
+						return fmt.Errorf("migration step %d failed: %w", i+1, err)
+					}
+					applied = append(applied, step)
+				}
+				return nil
 			},
 		},
 		{

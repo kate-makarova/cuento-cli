@@ -221,9 +221,17 @@ func pkSetsEqual(a, b []string) bool {
 	return true
 }
 
-// generateMigration compares two SQL schemas and returns the migration SQL needed
-// to bring the old schema up to the new one (new tables, new columns, new inserts).
-func generateMigration(oldSQL, newSQL string) string {
+// MigrationStep holds one forward migration statement and its corresponding
+// revert statement (empty string means no revert is needed).
+type MigrationStep struct {
+	Forward string
+	Revert  string
+}
+
+// generateMigration compares two SQL schemas and returns an ordered list of
+// migration steps, each with a forward statement and a revert statement so
+// that any partially-applied migration can be undone.
+func generateMigration(oldSQL, newSQL string) []MigrationStep {
 	oldTables := parseTables(oldSQL)
 	newTables := parseTables(newSQL)
 	oldPKs := parseTablePKs(oldSQL)
@@ -242,11 +250,14 @@ func generateMigration(oldSQL, newSQL string) string {
 	}
 	orderedNew := topoSort(newTableNames, newTableDDL)
 
-	var stmts []string
+	var steps []MigrationStep
 
 	for _, tableName := range orderedNew {
 		if ddl, ok := newTableDDL[tableName]; ok {
-			stmts = append(stmts, ddl+";\n")
+			steps = append(steps, MigrationStep{
+				Forward: ddl + ";\n",
+				Revert:  fmt.Sprintf("DROP TABLE IF EXISTS `%s`;\n", tableName),
+			})
 		}
 	}
 
@@ -266,9 +277,17 @@ func generateMigration(oldSQL, newSQL string) string {
 
 		pkChanged := len(oldPKs[tableName]) > 0 && !pkSetsEqual(oldPKs[tableName], newPKs[tableName])
 
-		var ops []string
+		// fwdOps and revOps are built in parallel; revOps will be reversed when
+		// assembling the revert ALTER TABLE statement.
+		var fwdOps, revOps []string
+
 		if pkChanged {
-			ops = append(ops, "DROP PRIMARY KEY")
+			quoted := make([]string, len(oldPKs[tableName]))
+			for i, col := range oldPKs[tableName] {
+				quoted[i] = "`" + col + "`"
+			}
+			fwdOps = append(fwdOps, "DROP PRIMARY KEY")
+			revOps = append(revOps, fmt.Sprintf("ADD PRIMARY KEY (%s)", strings.Join(quoted, ", ")))
 		}
 
 		// Sort column names for deterministic output.
@@ -282,28 +301,42 @@ func generateMigration(oldSQL, newSQL string) string {
 			colDef := newCols[colName]
 			cleanDef := strings.Join(strings.Fields(colDef), " ")
 			if oldDef, known := oldCols[colName]; !known {
-				ops = append(ops, fmt.Sprintf("ADD COLUMN %s", cleanDef))
+				fwdOps = append(fwdOps, fmt.Sprintf("ADD COLUMN %s", cleanDef))
+				revOps = append(revOps, fmt.Sprintf("DROP COLUMN `%s`", colName))
 			} else if normalizeColDef(oldDef) != normalizeColDef(colDef) {
-				ops = append(ops, fmt.Sprintf("MODIFY COLUMN %s", cleanDef))
+				cleanOldDef := strings.Join(strings.Fields(oldDef), " ")
+				fwdOps = append(fwdOps, fmt.Sprintf("MODIFY COLUMN %s", cleanDef))
+				revOps = append(revOps, fmt.Sprintf("MODIFY COLUMN %s", cleanOldDef))
 			}
 		}
 
-		if len(ops) > 0 {
-			stmts = append(stmts,
-				fmt.Sprintf("ALTER TABLE `%s`\n  %s;\n", tableName, strings.Join(ops, ",\n  ")))
+		if len(fwdOps) > 0 {
+			// Reverse revOps so we undo operations in the opposite order they were applied.
+			for i, j := 0, len(revOps)-1; i < j; i, j = i+1, j-1 {
+				revOps[i], revOps[j] = revOps[j], revOps[i]
+			}
+			steps = append(steps, MigrationStep{
+				Forward: fmt.Sprintf("ALTER TABLE `%s`\n  %s;\n", tableName, strings.Join(fwdOps, ",\n  ")),
+				Revert:  fmt.Sprintf("ALTER TABLE `%s`\n  %s;\n", tableName, strings.Join(revOps, ",\n  ")),
+			})
 		}
 	}
 
 	// Find INSERT statements present in new but not in old.
+	// No revert: INSERT IGNORE is idempotent seed data; reverting risks deleting
+	// rows that pre-existed the migration.
 	oldInserts := make(map[string]bool)
 	for _, ins := range extractInserts(oldSQL) {
 		oldInserts[ins] = true
 	}
 	for _, ins := range extractInserts(newSQL) {
 		if !oldInserts[ins] {
-			stmts = append(stmts, ins+"\n")
+			steps = append(steps, MigrationStep{
+				Forward: ins + "\n",
+				Revert:  "",
+			})
 		}
 	}
 
-	return strings.Join(stmts, "\n")
+	return steps
 }
