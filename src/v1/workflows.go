@@ -122,13 +122,12 @@ jobs:
               ! -path '/var/www/frontend/reactions/*' \
               ! -path '/var/www/frontend/avatars' \
               ! -path '/var/www/frontend/avatars/*' \
-              ! -path '/var/www/frontend/public' \
-              ! -path '/var/www/frontend/public/assets' \
-              ! -path '/var/www/frontend/public/assets/*' \
+              ! -path '/var/www/frontend/assets' \
+              ! -path '/var/www/frontend/assets/*' \
               -delete
             mkdir -p /var/www/frontend/reactions
             mkdir -p /var/www/frontend/avatars
-            mkdir -p /var/www/frontend/public/assets
+            mkdir -p /var/www/frontend/assets
 
       - name: Deploy to temporary staging
         uses: appleboy/scp-action@v0.1.7
@@ -207,13 +206,12 @@ jobs:
               ! -path '/var/www/frontend/reactions/*' \
               ! -path '/var/www/frontend/avatars' \
               ! -path '/var/www/frontend/avatars/*' \
-              ! -path '/var/www/frontend/public' \
-              ! -path '/var/www/frontend/public/assets' \
-              ! -path '/var/www/frontend/public/assets/*' \
+              ! -path '/var/www/frontend/assets' \
+              ! -path '/var/www/frontend/assets/*' \
               -delete
             mkdir -p /var/www/frontend/reactions
             mkdir -p /var/www/frontend/avatars
-            mkdir -p /var/www/frontend/public/assets
+            mkdir -p /var/www/frontend/assets
 
       - name: Deploy to temporary staging
         uses: appleboy/scp-action@v0.1.7
