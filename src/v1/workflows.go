@@ -28,7 +28,7 @@ jobs:
           cache: true
 
       - name: Build Binary
-        run: GOOS=linux GOARCH=amd64 go build -o cuento-backend main.go
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o cuento-backend main.go
 
       - name: Copy binary to server
         uses: appleboy/scp-action@v0.1.7
