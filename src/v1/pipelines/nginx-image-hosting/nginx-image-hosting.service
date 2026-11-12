@@ -1,0 +1,15 @@
+[Unit]
+Description=Nginx Image Hosting
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/nginx-image-hosting.pid
+ExecStartPre=/opt/nginx-image-hosting/sbin/nginx -t -c /etc/nginx-image-hosting/nginx.conf
+ExecStart=/opt/nginx-image-hosting/sbin/nginx -c /etc/nginx-image-hosting/nginx.conf
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

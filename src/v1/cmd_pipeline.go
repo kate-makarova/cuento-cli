@@ -129,6 +129,25 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 					"Reset Qdrant service file", qdrantServiceFile, []string{"main", "release"})
 			},
 		},
+		{
+			name: "Update nginx image hosting workflow",
+			fn: func() error {
+				if err := ghUpdateOnBranches(cfg.BackendFork, ".github/workflows/nginx-image-hosting.yml",
+					"Reset nginx image hosting workflow", nginxImageHostingWorkflow, []string{"main", "release"}); err != nil {
+					return fmt.Errorf("nginx-image-hosting workflow: %w", err)
+				}
+				if err := ghUpdateOnBranches(cfg.BackendFork, ".github/nginx-image-hosting/nginx.conf",
+					"Reset nginx image hosting main config", nginxMainConf, []string{"main", "release"}); err != nil {
+					return fmt.Errorf("nginx-image-hosting config: %w", err)
+				}
+				if err := ghUpdateOnBranches(cfg.BackendFork, ".github/nginx-image-hosting/image-hosting.conf",
+					"Reset nginx image hosting site config", nginxSiteConf, []string{"main", "release"}); err != nil {
+					return fmt.Errorf("nginx-image-hosting site config: %w", err)
+				}
+				return ghUpdateOnBranches(cfg.BackendFork, ".github/nginx-image-hosting/nginx-image-hosting.service",
+					"Reset nginx image hosting service file", nginxServiceFile, []string{"main", "release"})
+			},
+		},
 	}, 0, nil)
 
 	fmt.Println()

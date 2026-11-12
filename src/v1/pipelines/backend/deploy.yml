@@ -1,0 +1,55 @@
+name: Build and Deploy Cuento
+
+on:
+  push:
+    branches: [release]
+    paths-ignore:
+      - 'deployments/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Build Binary
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o cuento-backend main.go
+
+      - name: Copy binary to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "cuento-backend"
+          target: "/var/www/backend"
+
+      - name: Copy locales to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "locales"
+          target: "/var/www/backend"
+
+      - name: Restart service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            chmod +x /var/www/backend/cuento-backend
+            chown -R cuento:cuento /var/www/backend/locales
+            grep -v '^PROJECT_NAME=' /etc/environment > /tmp/env.tmp && mv /tmp/env.tmp /etc/environment || true
+            echo 'PROJECT_NAME=__PROJECT_NAME__' >> /etc/environment
+            systemctl restart cuento-backend

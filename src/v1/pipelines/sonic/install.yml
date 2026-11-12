@@ -1,0 +1,53 @@
+name: Install Sonic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install-sonic:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust and build Sonic
+        run: |
+          sudo apt-get install -y build-essential git
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          source "$HOME/.cargo/env"
+          git clone --depth 1 https://github.com/valeriansaliou/sonic.git sonic-src
+          cd sonic-src
+          cargo build --release
+          mkdir -p ../deploy
+          cp target/release/sonic ../deploy/sonic
+          cp ../.github/sonic/sonic.cfg ../deploy/sonic.cfg
+          cp ../.github/sonic/sonic.service ../deploy/sonic.service
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy/*"
+          target: "/tmp/sonic-deploy/"
+          strip_components: 1
+
+      - name: Install and start Sonic
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cp /tmp/sonic-deploy/sonic /usr/local/bin/sonic
+            chmod 755 /usr/local/bin/sonic
+            cp /tmp/sonic-deploy/sonic.cfg /etc/sonic.cfg
+            cp /tmp/sonic-deploy/sonic.service /etc/systemd/system/sonic.service
+            id -u sonic &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin sonic
+            mkdir -p /var/lib/sonic/store/kv /var/lib/sonic/store/fst
+            chown -R sonic:sonic /var/lib/sonic
+            systemctl daemon-reload
+            systemctl enable sonic
+            systemctl restart sonic
+            rm -rf /tmp/sonic-deploy

@@ -1,0 +1,11 @@
+name: Dev pipeline (disabled in fork)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disabled
+        run: echo "Dev pipeline is disabled in this fork. Use the release branch."
