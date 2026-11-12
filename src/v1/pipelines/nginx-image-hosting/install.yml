@@ -1,0 +1,78 @@
+name: Setup Nginx Image Hosting
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build nginx with AWS auth module
+        run: |
+          sudo apt-get install -y build-essential libpcre3-dev zlib1g-dev libssl-dev git curl
+          NGINX_VER=$(curl -fsSL https://nginx.org/download/ \
+            | grep -oP 'nginx-[0-9]+\.[0-9]*[02468]\.[0-9]+\.tar\.gz' \
+            | sort -V | tail -1 \
+            | grep -oP '[0-9]+\.[0-9]+\.[0-9]+')
+          [ -z "$NGINX_VER" ] && NGINX_VER="1.26.2"
+          echo "Building nginx $NGINX_VER"
+          curl -fsSL "https://nginx.org/download/nginx-${NGINX_VER}.tar.gz" -o nginx.tar.gz
+          tar -xzf nginx.tar.gz
+          git clone --depth 1 https://github.com/anomalizer/ngx_aws_auth.git
+          cd nginx-${NGINX_VER}
+          ./configure \
+            --prefix=/opt/nginx-image-hosting \
+            --sbin-path=/opt/nginx-image-hosting/sbin/nginx \
+            --conf-path=/etc/nginx-image-hosting/nginx.conf \
+            --error-log-path=/var/log/nginx-image-hosting/error.log \
+            --http-log-path=/var/log/nginx-image-hosting/access.log \
+            --pid-path=/var/run/nginx-image-hosting.pid \
+            --http-client-body-temp-path=/var/cache/nginx-image-hosting/client_temp \
+            --with-http_ssl_module \
+            --with-http_gzip_static_module \
+            --add-module=../ngx_aws_auth
+          make -j$(nproc)
+          mkdir -p ../deploy
+          cp objs/nginx ../deploy/nginx
+          cp conf/mime.types ../deploy/mime.types
+          cp ../.github/nginx-image-hosting/nginx.conf ../deploy/nginx.conf
+          cp ../.github/nginx-image-hosting/image-hosting.conf ../deploy/image-hosting.conf
+          cp ../.github/nginx-image-hosting/nginx-image-hosting.service ../deploy/nginx-image-hosting.service
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy/*"
+          target: "/tmp/nginx-image-hosting-deploy/"
+          strip_components: 1
+
+      - name: Install and configure
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            mkdir -p /opt/nginx-image-hosting/sbin
+            cp /tmp/nginx-image-hosting-deploy/nginx /opt/nginx-image-hosting/sbin/nginx
+            chmod 755 /opt/nginx-image-hosting/sbin/nginx
+            mkdir -p /home/static-images
+            chown www-data:www-data /home/static-images
+            chmod 755 /home/static-images
+            mkdir -p /var/log/nginx-image-hosting
+            mkdir -p /var/cache/nginx-image-hosting/client_temp
+            mkdir -p /etc/nginx-image-hosting/sites-enabled
+            cp /tmp/nginx-image-hosting-deploy/mime.types /etc/nginx-image-hosting/mime.types
+            cp /tmp/nginx-image-hosting-deploy/nginx.conf /etc/nginx-image-hosting/nginx.conf
+            cp /tmp/nginx-image-hosting-deploy/image-hosting.conf /etc/nginx-image-hosting/sites-enabled/image-hosting.conf
+            cp /tmp/nginx-image-hosting-deploy/nginx-image-hosting.service /etc/systemd/system/nginx-image-hosting.service
+            systemctl daemon-reload
+            systemctl enable nginx-image-hosting
+            systemctl stop nginx-image-hosting || true
+            rm -rf /tmp/nginx-image-hosting-deploy

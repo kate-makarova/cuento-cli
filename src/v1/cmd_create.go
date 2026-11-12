@@ -125,8 +125,24 @@ func runCreate(app *AppConfig, resumeFrom int, resumeCfg *Config) {
 					"main", "Add Qdrant install workflow", qdrantWorkflow); err != nil {
 					return fmt.Errorf("qdrant workflow: %w", err)
 				}
-				return ghUpdateFile(cfg.BackendFork, ".github/qdrant/qdrant.service",
-					"main", "Add Qdrant service file", qdrantServiceFile)
+				if err := ghUpdateFile(cfg.BackendFork, ".github/qdrant/qdrant.service",
+					"main", "Add Qdrant service file", qdrantServiceFile); err != nil {
+					return fmt.Errorf("qdrant service: %w", err)
+				}
+				if err := ghUpdateFile(cfg.BackendFork, ".github/workflows/nginx-image-hosting.yml",
+					"main", "Add nginx image hosting workflow", nginxImageHostingWorkflow); err != nil {
+					return fmt.Errorf("nginx-image-hosting workflow: %w", err)
+				}
+				if err := ghUpdateFile(cfg.BackendFork, ".github/nginx-image-hosting/nginx.conf",
+					"main", "Add nginx image hosting main config", nginxMainConf); err != nil {
+					return fmt.Errorf("nginx-image-hosting config: %w", err)
+				}
+				if err := ghUpdateFile(cfg.BackendFork, ".github/nginx-image-hosting/image-hosting.conf",
+					"main", "Add nginx image hosting site config", nginxSiteConf); err != nil {
+					return fmt.Errorf("nginx-image-hosting site config: %w", err)
+				}
+				return ghUpdateFile(cfg.BackendFork, ".github/nginx-image-hosting/nginx-image-hosting.service",
+					"main", "Add nginx image hosting service file", nginxServiceFile)
 			},
 		},
 		{
@@ -338,6 +354,18 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 					return err
 				}
 				fmt.Println(cyan("   Qdrant is being installed in the background and will be ready in a few minutes."))
+				return nil
+			},
+		},
+		{
+			name: "Trigger nginx image hosting pipeline",
+			fn: func() error {
+				if err := runLocal("gh", "api",
+					fmt.Sprintf("repos/%s/actions/workflows/nginx-image-hosting.yml/dispatches", cfg.BackendFork),
+					"-X", "POST", "-f", "ref=main"); err != nil {
+					return err
+				}
+				fmt.Println(cyan("   Nginx image hosting is being set up in the background (builds from source, takes ~10 minutes)."))
 				return nil
 			},
 		},

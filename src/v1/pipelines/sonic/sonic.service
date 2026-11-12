@@ -1,0 +1,13 @@
+[Unit]
+Description=Sonic Search Index
+After=network.target
+
+[Service]
+Type=simple
+User=sonic
+ExecStart=/usr/local/bin/sonic -c /etc/sonic.cfg
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
