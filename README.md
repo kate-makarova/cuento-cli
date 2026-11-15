@@ -109,6 +109,27 @@ Re-applies the current upstream GitHub Actions workflow files to both the backen
 
 ---
 
+## Non-interactive mode
+
+Since 2.1.0 the CLI also runs single commands from its arguments, for scripts and AI agents. Without arguments it shows the interactive menu as before.
+
+```bash
+cuento-cli list                                         # saved project names, one per line
+cuento-cli update --project NAME [--apply-migration]
+cuento-cli diagnostics --project NAME [--json]
+cuento-cli reset-pipeline --project NAME
+cuento-cli version
+cuento-cli help
+```
+
+- **Commands never prompt.** Credentials come from the saved project config; there are no flags for tokens or passwords.
+- **`update`** stops with an error before merging when a database migration is needed, unless `--apply-migration` is given. The migration SQL is printed either way.
+- **`diagnostics`** only reports — it never creates or alters tables. `--json` prints a machine-readable report on stdout (progress goes to stderr).
+- **Exit codes:** `0` success, `1` the operation failed, `2` invalid usage (unknown command or project, missing `--project`).
+- Colors are turned off when the output is not a terminal, or when `NO_COLOR` is set.
+
+---
+
 ## Configuration
 
 Project configuration (server credentials, GitHub token, SSH keys, setup progress) is stored locally in your system config directory and is readable only by your user.

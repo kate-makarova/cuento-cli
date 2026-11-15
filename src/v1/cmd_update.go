@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -9,11 +10,32 @@ import (
 
 // ─── UPDATE ───────────────────────────────────────────────────────────────────
 
-func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig) {
-	runUpdateWithBranch(app, projectName, saved, trackBranch)
+// migrationDecision is asked once, after the migration SQL has been shown, whether
+// to apply it. An error stops the update before anything is merged.
+type migrationDecision func() (apply bool, err error)
+
+func confirmMigration() (bool, error) {
+	return confirm("   Apply the migration SQL shown above?"), nil
 }
 
-func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfig, branch string) {
+var errMigrationNotApproved = errors.New("a database migration is required; rerun with --apply-migration to apply it")
+
+// flagMigrationDecision is the non-interactive rule: apply only when the flag was
+// given, otherwise stop rather than deploy code without its schema change.
+func flagMigrationDecision(applyMigration bool) migrationDecision {
+	return func() (bool, error) {
+		if !applyMigration {
+			return false, errMigrationNotApproved
+		}
+		return true, nil
+	}
+}
+
+func runUpdate(app *AppConfig, projectName string, saved *ProjectConfig, decide migrationDecision) {
+	runUpdateWithBranch(app, projectName, saved, trackBranch, decide)
+}
+
+func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfig, branch string, decide migrationDecision) {
 	if saved == nil {
 		fatalExit(red("  ✗ No saved config for project " + projectName))
 	}
@@ -172,7 +194,11 @@ func runUpdateWithBranch(app *AppConfig, projectName string, saved *ProjectConfi
 					fmt.Println("   Nothing to migrate.")
 					return nil
 				}
-				if !confirm("   Apply the migration SQL shown above?") {
+				apply, err := decide()
+				if err != nil {
+					return err
+				}
+				if !apply {
 					fmt.Println(yellow("   Skipped by user."))
 					return nil
 				}

@@ -14,11 +14,12 @@ type step struct {
 	always bool // run even when skipping (e.g. connect to server)
 }
 
-// fatalExit prints an error and exits. On Windows it pauses so the user can
-// read the message before the console window closes.
+// fatalExit prints an error and exits with status 1. On Windows it pauses so the
+// user can read the message before the console window closes, unless the CLI is
+// running a command non-interactively.
 func fatalExit(msg string) {
 	fmt.Println(msg)
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && !nonInteractive {
 		fmt.Println("\nPress Enter to exit...")
 		_, _ = reader.ReadString('\n')
 	}
