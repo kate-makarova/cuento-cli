@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -291,7 +293,127 @@ func extractCreateTableSQL(fullSQL, tableName string) string {
 	return ""
 }
 
-func runDiagnostics(app *AppConfig, projectName string, saved *ProjectConfig) {
+// Table statuses in a diagnostics report.
+const (
+	tableOK          = "ok"
+	tableMissing     = "missing"     // in the schema file, not in the database
+	tableDifferences = "differences" // columns differ
+	tableExtra       = "extra"       // in the database, not in the schema file
+)
+
+type tableReport struct {
+	name      string
+	status    string
+	schemaSQL string // CREATE statement from the schema file
+	liveSQL   string // CREATE statement from the live database
+	changes   []colChange
+	risk      riskLevel
+	alters    []string // ALTER statements that bring the live table in line
+	rowCount  int
+	rowErr    error // set when the row count could not be read
+}
+
+// compareSchemas diffs the schema file against the live database. Tables from the
+// schema file come first, sorted by name, followed by extra live tables.
+func compareSchemas(sqlSchema, liveSchema string) []tableReport {
+	sqlTables := parseTables(sqlSchema)
+	liveTables := parseTables(liveSchema)
+
+	var reports []tableReport
+	for _, tableName := range sortedKeys(sqlTables) {
+		r := tableReport{
+			name:      tableName,
+			schemaSQL: extractCreateTableSQL(sqlSchema, tableName),
+			liveSQL:   extractCreateTableSQL(liveSchema, tableName),
+		}
+		liveCols, exists := liveTables[tableName]
+		switch {
+		case !exists:
+			r.status = tableMissing
+		default:
+			r.changes = columnChanges(tableName, sqlTables[tableName], liveCols)
+			r.status = tableOK
+			if len(r.changes) > 0 {
+				r.status = tableDifferences
+				r.risk, r.alters = planAlters(tableName, r.changes)
+			}
+		}
+		reports = append(reports, r)
+	}
+	for _, tableName := range sortedKeys(liveTables) {
+		if _, inSQL := sqlTables[tableName]; !inSQL {
+			reports = append(reports, tableReport{name: tableName, status: tableExtra})
+		}
+	}
+	return reports
+}
+
+func sortedKeys(m map[string]map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func columnChanges(tableName string, sqlCols, liveCols map[string]string) []colChange {
+	var changes []colChange
+	for colName, newDef := range sqlCols {
+		oldDef, known := liveCols[colName]
+		if !known {
+			risk, reason := riskLow, "new nullable column"
+			if !isNullableOrHasDefault(newDef) {
+				risk, reason = riskMedium, "new NOT NULL column without default"
+			}
+			changes = append(changes, colChange{name: colName, newDef: newDef, risk: risk, reason: reason})
+		} else if normalizeColDef(oldDef) != normalizeColDef(newDef) {
+			risk, reason := assessTypeRisk(oldDef, newDef)
+			changes = append(changes, colChange{name: colName, oldDef: oldDef, newDef: newDef, risk: risk, reason: reason})
+		}
+	}
+
+	// _flattened tables have dynamic extra columns — only validate what the
+	// SQL file defines, ignore any additional live columns.
+	if !strings.HasSuffix(tableName, "_flattened") {
+		for colName, oldDef := range liveCols {
+			if _, inSQL := sqlCols[colName]; !inSQL {
+				changes = append(changes, colChange{name: colName, oldDef: oldDef, risk: riskHigh, reason: "column to be removed"})
+			}
+		}
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].name < changes[j].name })
+	return changes
+}
+
+func planAlters(tableName string, changes []colChange) (riskLevel, []string) {
+	overall := riskNone
+	var alters []string
+	for _, c := range changes {
+		if c.risk > overall {
+			overall = c.risk
+		}
+		switch {
+		case c.oldDef == "":
+			alters = append(alters, fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN %s;", tableName, c.newDef))
+		case c.newDef == "":
+			alters = append(alters, fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`;", tableName, c.name))
+		default:
+			alters = append(alters, fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN %s;", tableName, c.newDef))
+		}
+	}
+	return overall, alters
+}
+
+// diagnosticsSession holds what both the menu and the command need: the reports
+// and an open connection (closed by the caller) for row counts and fixes.
+type diagnosticsSession struct {
+	cfg     *Config
+	remote  *Remote
+	reports []tableReport
+}
+
+func collectDiagnostics(projectName string, saved *ProjectConfig) *diagnosticsSession {
 	if saved == nil {
 		fatalExit(red("  ✗ No saved config for project " + projectName))
 	}
@@ -317,199 +439,217 @@ func runDiagnostics(app *AppConfig, projectName string, saved *ProjectConfig) {
 		_ = cmd.Run()
 	}
 
-	// ── Gather data ──────────────────────────────────────────────────────────
-	fmt.Print("\n▶  " + bold("Fetching schema from GitHub") + "\n")
+	// Progress goes to stderr so that stdout carries only the report (JSON mode).
+	fmt.Fprint(os.Stderr, "\n▶  "+bold("Fetching schema from GitHub")+"\n")
 	sqlSchema, err := ghReadFile(cfg.BackendFork, sqlFile, trackBranch)
 	if err != nil {
 		fatalExit(red("   ✗ " + err.Error()))
 	}
-	fmt.Println(green("   ✓ Done"))
+	fmt.Fprintln(os.Stderr, green("   ✓ Done"))
 
-	fmt.Print("\n▶  " + bold("Connecting to server") + "\n")
+	fmt.Fprint(os.Stderr, "\n▶  "+bold("Connecting to server")+"\n")
 	client, err := connectSSH(cfg.ServerIP, "22", cfg.SSHUser, cfg.SSHPass)
 	if err != nil {
 		fatalExit(red("   ✗ " + err.Error()))
 	}
 	remote := &Remote{client: client, sudoPass: cfg.SudoPass}
-	defer remote.client.Close()
-	fmt.Println(green("   ✓ Done"))
+	fmt.Fprintln(os.Stderr, green("   ✓ Done"))
 
-	fmt.Print("\n▶  " + bold("Fetching live database schema") + "\n")
+	fmt.Fprint(os.Stderr, "\n▶  "+bold("Fetching live database schema")+"\n")
 	liveSchema, err := remote.fetchLiveSchema(cfg.DBUser, cfg.DBPass, cfg.DBName)
 	if err != nil {
+		remote.client.Close()
 		fatalExit(red("   ✗ " + err.Error()))
 	}
-	fmt.Println(green("   ✓ Done"))
+	fmt.Fprintln(os.Stderr, green("   ✓ Done"))
 
-	// ── Compare ──────────────────────────────────────────────────────────────
-	sqlTables := parseTables(sqlSchema)
-	liveTables := parseTables(liveSchema)
-
-	sep := strings.Repeat("─", 52)
-
-	tableNames := make([]string, 0, len(sqlTables))
-	for t := range sqlTables {
-		tableNames = append(tableNames, t)
+	reports := compareSchemas(sqlSchema, liveSchema)
+	for i := range reports {
+		if reports[i].status == tableDifferences {
+			reports[i].rowCount, reports[i].rowErr = remote.queryRowCount(cfg.DBUser, cfg.DBPass, cfg.DBName, reports[i].name)
+		}
 	}
-	sort.Strings(tableNames)
+	return &diagnosticsSession{cfg: cfg, remote: remote, reports: reports}
+}
+
+const diagnosticsSep = "────────────────────────────────────────────────────"
+
+// runDiagnostics is the menu flow: print each table and offer to fix it.
+func runDiagnostics(app *AppConfig, projectName string, saved *ProjectConfig) {
+	s := collectDiagnostics(projectName, saved)
+	defer s.remote.client.Close()
+
+	printDiagnosticsHeader(s.cfg.DBName)
+	for _, r := range s.reports {
+		printTableReport(r)
+		offerTableFix(s, r)
+		fmt.Println(diagnosticsSep)
+	}
+	fmt.Println()
+}
+
+func printDiagnosticsHeader(dbName string) {
+	fmt.Println()
+	fmt.Println(bold(diagnosticsSep))
+	fmt.Printf("  %s — %s\n", bold("Database Diagnostic Report"), cyan(dbName))
+	fmt.Println(bold(diagnosticsSep))
+}
+
+func printTableReport(r tableReport) {
+	fmt.Println()
+	fmt.Printf("  Table: %s\n", bold(r.name))
+
+	if r.status == tableExtra {
+		fmt.Printf("  Status: %s\n", yellow("EXTRA — not in schema file (no action taken)"))
+		return
+	}
+
+	fmt.Printf("  [SQL file]\n%s\n\n", r.schemaSQL)
+	fmt.Printf("  [Live DB]\n%s\n\n", r.liveSQL)
+	switch r.status {
+	case tableMissing:
+		fmt.Printf("  Status: %s\n", yellow("MISSING — not in database"))
+		return
+	case tableOK:
+		fmt.Printf("  Status: %s\n", green("OK ✓"))
+		return
+	}
+
+	fmt.Printf("  Status: %s\n", yellow("DIFFERENCES FOUND"))
+	if r.rowErr != nil {
+		fmt.Printf("  %s\n", yellow("⚠  Could not get row count: "+r.rowErr.Error()))
+	} else {
+		fmt.Printf("  Rows: %d\n", r.rowCount)
+	}
 
 	fmt.Println()
-	fmt.Println(bold(sep))
-	fmt.Printf("  %s — %s\n", bold("Database Diagnostic Report"), cyan(cfg.DBName))
-	fmt.Println(bold(sep))
-
-	for _, tableName := range tableNames {
-		sqlCols := sqlTables[tableName]
-		fmt.Println()
-		fmt.Printf("  Table: %s\n", bold(tableName))
-
-		fmt.Printf("  [SQL file]\n%s\n\n", extractCreateTableSQL(sqlSchema, tableName))
-		fmt.Printf("  [Live DB]\n%s\n\n", extractCreateTableSQL(liveSchema, tableName))
-
-		liveCols, exists := liveTables[tableName]
-		if !exists {
-			fmt.Printf("  Status: %s\n", yellow("MISSING — not in database"))
-			createSQL := extractCreateTableSQL(sqlSchema, tableName)
-			if createSQL != "" && confirm("  Create this table?") {
-				if applyErr := remote.runWithInput(
-					fmt.Sprintf(`MYSQL_PWD='%s' mysql -u %s %s`, cfg.DBPass, cfg.DBUser, cfg.DBName),
-					createSQL+"\n",
-				); applyErr != nil {
-					fmt.Println(red("   ✗ " + applyErr.Error()))
-				} else {
-					fmt.Println(green("   ✓ Table created."))
-				}
-			}
-			fmt.Println(sep)
-			continue
+	fmt.Println("  Changes:")
+	for _, c := range r.changes {
+		var marker, def string
+		switch {
+		case c.oldDef == "":
+			marker = green("+")
+			def = c.newDef
+		case c.newDef == "":
+			marker = red("-")
+			def = c.oldDef
+		default:
+			marker = yellow("~")
+			def = c.newDef
 		}
-
-		// Collect column differences
-		var changes []colChange
-		for colName, newDef := range sqlCols {
-			oldDef, known := liveCols[colName]
-			if !known {
-				risk, reason := riskLow, "new nullable column"
-				if !isNullableOrHasDefault(newDef) {
-					risk, reason = riskMedium, "new NOT NULL column without default"
-				}
-				changes = append(changes, colChange{name: colName, newDef: newDef, risk: risk, reason: reason})
-			} else if normalizeColDef(oldDef) != normalizeColDef(newDef) {
-				risk, reason := assessTypeRisk(oldDef, newDef)
-				changes = append(changes, colChange{name: colName, oldDef: oldDef, newDef: newDef, risk: risk, reason: reason})
-			}
-		}
-		// _flattened tables have dynamic extra columns — only validate what the
-		// SQL file defines, ignore any additional live columns.
-		if !strings.HasSuffix(tableName, "_flattened") {
-			for colName, oldDef := range liveCols {
-				if _, inSQL := sqlCols[colName]; !inSQL {
-					changes = append(changes, colChange{name: colName, oldDef: oldDef, risk: riskHigh, reason: "column to be removed"})
-				}
-			}
-		}
-
-		if len(changes) == 0 {
-			fmt.Printf("  Status: %s\n", green("OK ✓"))
-			fmt.Println(sep)
-			continue
-		}
-
-		fmt.Printf("  Status: %s\n", yellow("DIFFERENCES FOUND"))
-
-		rowCount, countErr := remote.queryRowCount(cfg.DBUser, cfg.DBPass, cfg.DBName, tableName)
-		if countErr != nil {
-			fmt.Printf("  %s\n", yellow("⚠  Could not get row count: "+countErr.Error()))
-		} else {
-			fmt.Printf("  Rows: %d\n", rowCount)
-		}
-
-		sort.Slice(changes, func(i, j int) bool { return changes[i].name < changes[j].name })
-
-		overallRisk := riskNone
-		for _, c := range changes {
-			if c.risk > overallRisk {
-				overallRisk = c.risk
-			}
-		}
-
-		fmt.Println()
-		fmt.Println("  Changes:")
-		for _, c := range changes {
-			var marker, def string
-			switch {
-			case c.oldDef == "":
-				marker = green("+")
-				def = c.newDef
-			case c.newDef == "":
-				marker = red("-")
-				def = c.oldDef
-			default:
-				marker = yellow("~")
-				def = c.newDef
-			}
-			fmt.Printf("    %s  %s\n       Risk: %s — %s\n", marker, def, c.risk.colored(), c.reason)
-		}
-
-		// Generate ALTER TABLE statements
-		var alters []string
-		for _, c := range changes {
-			switch {
-			case c.oldDef == "":
-				alters = append(alters, fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN %s;", tableName, c.newDef))
-			case c.newDef == "":
-				alters = append(alters, fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`;", tableName, c.name))
-			default:
-				alters = append(alters, fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN %s;", tableName, c.newDef))
-			}
-		}
-
-		fmt.Println()
-		if countErr == nil && rowCount == 0 {
-			fmt.Printf("  Risk level: %s (table is empty — safe to recreate)\n", green("Minimal"))
-			createSQL := extractCreateTableSQL(sqlSchema, tableName)
-			if createSQL != "" && confirm("  Recreate this table from schema?") {
-				recreateSQL := fmt.Sprintf("DROP TABLE IF EXISTS `%s`;\n%s\n", tableName, createSQL)
-				if applyErr := remote.runWithInput(
-					fmt.Sprintf(`MYSQL_PWD='%s' mysql -u %s %s`, cfg.DBPass, cfg.DBUser, cfg.DBName),
-					recreateSQL,
-				); applyErr != nil {
-					fmt.Println(red("   ✗ " + applyErr.Error()))
-				} else {
-					fmt.Println(green("   ✓ Table recreated."))
-				}
-			}
-		} else {
-			fmt.Printf("  Overall risk: %s\n", overallRisk.colored())
-			fmt.Println()
-			fmt.Println("  Generated SQL:")
-			for _, a := range alters {
-				fmt.Println("    " + a)
-			}
-			fmt.Println()
-			if confirm("  Apply these changes?") {
-				if applyErr := remote.runWithInput(
-					fmt.Sprintf(`MYSQL_PWD='%s' mysql -u %s %s`, cfg.DBPass, cfg.DBUser, cfg.DBName),
-					strings.Join(alters, "\n")+"\n",
-				); applyErr != nil {
-					fmt.Println(red("   ✗ " + applyErr.Error()))
-				} else {
-					fmt.Println(green("   ✓ Changes applied."))
-				}
-			}
-		}
-		fmt.Println(sep)
+		fmt.Printf("    %s  %s\n       Risk: %s — %s\n", marker, def, c.risk.colored(), c.reason)
 	}
 
-	// Report tables in live DB not in schema file
-	for tableName := range liveTables {
-		if _, inSQL := sqlTables[tableName]; !inSQL {
-			fmt.Println()
-			fmt.Printf("  Table: %s\n", bold(tableName))
-			fmt.Printf("  Status: %s\n", yellow("EXTRA — not in schema file (no action taken)"))
-			fmt.Println(sep)
+	fmt.Println()
+	if r.rowErr == nil && r.rowCount == 0 {
+		fmt.Printf("  Risk level: %s (table is empty — safe to recreate)\n", green("Minimal"))
+		return
+	}
+	fmt.Printf("  Overall risk: %s\n", r.risk.colored())
+	fmt.Println()
+	fmt.Println("  Generated SQL:")
+	for _, a := range r.alters {
+		fmt.Println("    " + a)
+	}
+	fmt.Println()
+}
+
+// offerTableFix asks whether to create, recreate or alter a table. Menu only.
+func offerTableFix(s *diagnosticsSession, r tableReport) {
+	mysqlCmd := fmt.Sprintf(`MYSQL_PWD='%s' mysql -u %s %s`, s.cfg.DBPass, s.cfg.DBUser, s.cfg.DBName)
+
+	switch {
+	case r.status == tableMissing:
+		if r.schemaSQL != "" && confirm("  Create this table?") {
+			reportApply(s.remote.runWithInput(mysqlCmd, r.schemaSQL+"\n"), "Table created.")
+		}
+	case r.status == tableDifferences && r.rowErr == nil && r.rowCount == 0:
+		if r.schemaSQL != "" && confirm("  Recreate this table from schema?") {
+			recreateSQL := fmt.Sprintf("DROP TABLE IF EXISTS `%s`;\n%s\n", r.name, r.schemaSQL)
+			reportApply(s.remote.runWithInput(mysqlCmd, recreateSQL), "Table recreated.")
+		}
+	case r.status == tableDifferences:
+		if confirm("  Apply these changes?") {
+			reportApply(s.remote.runWithInput(mysqlCmd, strings.Join(r.alters, "\n")+"\n"), "Changes applied.")
 		}
 	}
+}
 
+func reportApply(err error, success string) {
+	if err != nil {
+		fmt.Println(red("   ✗ " + err.Error()))
+		return
+	}
+	fmt.Println(green("   ✓ " + success))
+}
+
+// ─── Diagnostics command (non-interactive, report only) ───────────────────────
+
+type jsonColumnChange struct {
+	Column string `json:"column"`
+	Old    string `json:"old,omitempty"`
+	New    string `json:"new,omitempty"`
+	Risk   string `json:"risk"`
+	Reason string `json:"reason"`
+}
+
+type jsonTableReport struct {
+	Name     string             `json:"name"`
+	Status   string             `json:"status"`
+	RowCount *int               `json:"row_count,omitempty"`
+	Risk     string             `json:"risk,omitempty"`
+	Changes  []jsonColumnChange `json:"changes,omitempty"`
+	SQL      []string           `json:"sql,omitempty"`
+}
+
+type jsonDiagnosticsReport struct {
+	Database string            `json:"database"`
+	Tables   []jsonTableReport `json:"tables"`
+}
+
+func toJSONReport(dbName string, reports []tableReport) jsonDiagnosticsReport {
+	out := jsonDiagnosticsReport{Database: dbName, Tables: []jsonTableReport{}}
+	for _, r := range reports {
+		t := jsonTableReport{Name: r.name, Status: r.status}
+		switch r.status {
+		case tableMissing:
+			if r.schemaSQL != "" {
+				t.SQL = []string{r.schemaSQL}
+			}
+		case tableDifferences:
+			if r.rowErr == nil {
+				n := r.rowCount
+				t.RowCount = &n
+			}
+			t.Risk = r.risk.label()
+			t.SQL = r.alters
+			for _, c := range r.changes {
+				t.Changes = append(t.Changes, jsonColumnChange{Column: c.name, Old: c.oldDef, New: c.newDef, Risk: c.risk.label(), Reason: c.reason})
+			}
+		}
+		out.Tables = append(out.Tables, t)
+	}
+	return out
+}
+
+// runDiagnosticsReport prints the report without offering any fixes.
+func runDiagnosticsReport(projectName string, saved *ProjectConfig, asJSON bool) {
+	s := collectDiagnostics(projectName, saved)
+	defer s.remote.client.Close()
+
+	if asJSON {
+		data, err := json.MarshalIndent(toJSONReport(s.cfg.DBName, s.reports), "", "  ")
+		if err != nil {
+			fatalExit(red("  ✗ encoding report: " + err.Error()))
+		}
+		fmt.Println(string(data))
+		return
+	}
+
+	printDiagnosticsHeader(s.cfg.DBName)
+	for _, r := range s.reports {
+		printTableReport(r)
+		fmt.Println(diagnosticsSep)
+	}
 	fmt.Println()
 }

@@ -1,6 +1,11 @@
 package main
 
-import "runtime"
+import (
+	"os"
+	"runtime"
+
+	"golang.org/x/term"
+)
 
 // ─── ANSI colours ─────────────────────────────────────────────────────────────
 
@@ -16,8 +21,11 @@ const (
 
 // colorsEnabled is set at startup based on whether the terminal supports ANSI.
 // Windows CMD and PowerShell on versions before Windows 10 do not support ANSI
-// escape codes and will render them as raw text.
-var colorsEnabled = runtime.GOOS != "windows"
+// escape codes and will render them as raw text. Output that is not a terminal
+// (pipes, logs, AI agents) and NO_COLOR (https://no-color.org) get plain text.
+var colorsEnabled = runtime.GOOS != "windows" &&
+	term.IsTerminal(int(os.Stdout.Fd())) &&
+	os.Getenv("NO_COLOR") == ""
 
 func bold(s string) string {
 	if colorsEnabled {
@@ -40,6 +48,12 @@ func red(s string) string {
 func yellow(s string) string {
 	if colorsEnabled {
 		return colorYellow + s + colorReset
+	}
+	return s
+}
+func blue(s string) string {
+	if colorsEnabled {
+		return colorBlue + s + colorReset
 	}
 	return s
 }

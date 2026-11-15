@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 )
@@ -20,13 +21,17 @@ const (
 
 func printBanner() {
 	fmt.Println()
-	fmt.Println(bold(colorBlue + "╔══════════════════════════════════════╗" + colorReset))
-	fmt.Println(bold(colorBlue + "║         Cuento CLI 2.0.1             ║" + colorReset))
-	fmt.Println(bold(colorBlue + "╚══════════════════════════════════════╝" + colorReset))
+	fmt.Println(bold(blue("╔══════════════════════════════════════╗")))
+	fmt.Println(bold(blue(fmt.Sprintf("║         Cuento CLI %-18s║", cliVersion))))
+	fmt.Println(bold(blue("╚══════════════════════════════════════╝")))
 	fmt.Println()
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		os.Exit(runCommand(os.Args[1:], loadConfig()))
+	}
+
 	printBanner()
 
 	app := loadConfig()
@@ -129,7 +134,7 @@ func main() {
 
 		switch action {
 		case "1":
-			runUpdate(app, name, saved)
+			runUpdate(app, name, saved, confirmMigration)
 		case "2":
 			runAddUser(app, name, saved)
 		case "3":
