@@ -21,7 +21,7 @@ const (
 func printBanner() {
 	fmt.Println()
 	fmt.Println(bold(colorBlue + "╔══════════════════════════════════════╗" + colorReset))
-	fmt.Println(bold(colorBlue + "║         Cuento CLI 2.0.0             ║" + colorReset))
+	fmt.Println(bold(colorBlue + "║         Cuento CLI 2.0.1             ║" + colorReset))
 	fmt.Println(bold(colorBlue + "╚══════════════════════════════════════╝" + colorReset))
 	fmt.Println()
 }
