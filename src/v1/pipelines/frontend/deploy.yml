@@ -7,6 +7,11 @@ on:
       - 'deployments/**'
   workflow_dispatch:
 
+# Shared with monitor.yml: both deploy into /var/www/frontend, so runs must not overlap.
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest

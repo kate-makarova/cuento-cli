@@ -10,7 +10,7 @@ import (
 
 // ─── Non-interactive commands ─────────────────────────────────────────────────
 
-const cliVersion = "2.1.0"
+const cliVersion = "2.1.1"
 
 const usageText = `Usage:
   cuento-cli                         interactive menu
