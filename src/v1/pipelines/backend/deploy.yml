@@ -7,6 +7,10 @@ on:
       - 'deployments/**'
   workflow_dispatch:
 
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

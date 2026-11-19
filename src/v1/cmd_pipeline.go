@@ -40,6 +40,12 @@ func runDeployMonitorPipeline(app *AppConfig, projectName string, saved *Project
 				return ghMergeUpstream(cfg.FrontendFork, "monitor")
 			},
 		},
+		{
+			name: "Trigger frontend monitor deployment",
+			fn: func() error {
+				return ghDispatchWorkflow(cfg.FrontendFork, "monitor.yml", "monitor")
+			},
+		},
 	}, 0, nil)
 
 	fmt.Println()
@@ -73,6 +79,16 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 					"Reset deployment workflow", frontendWorkflow(cfg.ProjectName), []string{"main", "release"})
 			},
 		},
+		// The monitor workflow is rewritten before anything else touches the monitor
+		// branch: older forks have a push-triggered monitor.yml, and any push to the
+		// branch under it deployed the stale monitor build over production.
+		{
+			name: "Update frontend monitor workflow",
+			fn: func() error {
+				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/monitor.yml",
+					"Reset monitoring deployment workflow", frontendMonitorWorkflow(cfg.ProjectName), []string{"main", "release", "monitor"})
+			},
+		},
 		{
 			name: "Ensure monitor branch exists in frontend fork",
 			fn: func() error {
@@ -83,13 +99,6 @@ func runResetPipeline(app *AppConfig, projectName string, saved *ProjectConfig) 
 			name: "Sync monitor branch with upstream",
 			fn: func() error {
 				return ghMergeUpstream(cfg.FrontendFork, "monitor")
-			},
-		},
-		{
-			name: "Update frontend monitor workflow",
-			fn: func() error {
-				return ghUpdateOnBranches(cfg.FrontendFork, ".github/workflows/monitor.yml",
-					"Reset monitoring deployment workflow", frontendMonitorWorkflow(cfg.ProjectName), []string{"main", "release", "monitor"})
 			},
 		},
 		{

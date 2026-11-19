@@ -162,6 +162,13 @@ func ghCreateBranch(repo, branch, fromBranch string) error {
 	return nil
 }
 
+// ghDispatchWorkflow starts a workflow_dispatch run of workflow (file name) on ref.
+func ghDispatchWorkflow(repo, workflow, ref string) error {
+	return runLocal("gh", "api",
+		fmt.Sprintf("repos/%s/actions/workflows/%s/dispatches", repo, workflow),
+		"-X", "POST", "-f", "ref="+ref)
+}
+
 // ghMergeUpstream pulls the latest upstream into a fork branch via the API.
 func ghMergeUpstream(fork, branch string) error {
 	cmd := exec.Command("gh", "api",

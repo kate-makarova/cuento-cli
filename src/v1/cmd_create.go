@@ -336,9 +336,7 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 		{
 			name: "Trigger Sonic install pipeline",
 			fn: func() error {
-				if err := runLocal("gh", "api",
-					fmt.Sprintf("repos/%s/actions/workflows/sonic.yml/dispatches", cfg.BackendFork),
-					"-X", "POST", "-f", "ref=main"); err != nil {
+				if err := ghDispatchWorkflow(cfg.BackendFork, "sonic.yml", "main"); err != nil {
 					return err
 				}
 				fmt.Println(cyan("   The search engine is being installed in the background and will be ready in 10–15 minutes."))
@@ -348,9 +346,7 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 		{
 			name: "Trigger Qdrant install pipeline",
 			fn: func() error {
-				if err := runLocal("gh", "api",
-					fmt.Sprintf("repos/%s/actions/workflows/qdrant.yml/dispatches", cfg.BackendFork),
-					"-X", "POST", "-f", "ref=main"); err != nil {
+				if err := ghDispatchWorkflow(cfg.BackendFork, "qdrant.yml", "main"); err != nil {
 					return err
 				}
 				fmt.Println(cyan("   Qdrant is being installed in the background and will be ready in a few minutes."))
@@ -360,9 +356,7 @@ chmod 600 ~/.ssh/authorized_keys`, pubKey))
 		{
 			name: "Trigger nginx image hosting pipeline",
 			fn: func() error {
-				if err := runLocal("gh", "api",
-					fmt.Sprintf("repos/%s/actions/workflows/nginx-image-hosting.yml/dispatches", cfg.BackendFork),
-					"-X", "POST", "-f", "ref=main"); err != nil {
+				if err := ghDispatchWorkflow(cfg.BackendFork, "nginx-image-hosting.yml", "main"); err != nil {
 					return err
 				}
 				fmt.Println(cyan("   Nginx image hosting is being set up in the background (builds from source, takes ~10 minutes)."))
